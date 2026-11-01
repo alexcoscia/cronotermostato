@@ -205,7 +205,11 @@ Changes to programs are made only with the services.
   on resume, after a program edit, when the thermostat comes back from
   `unavailable`, and when an override starts or ends. **No periodic commands.**
 - Changes made elsewhere (dial, app) are not detected; they last until the next slot change.
-- A manual override lasts until the end of the current slot and survives a restart.
+- A manual override lasts until the end of the current slot and is kept across a restart.
+  If the thermostat is already available when Home Assistant starts, no command is sent
+  for it. At a real start the `climate` entity often does not exist yet (state
+  `missing`/`unavailable`): when it appears the controller applies the active override
+  or the current slot, so commands after a restart, once the thermostat is back, are normal.
 - If the thermostat is `unavailable`, nothing is sent; when it comes back the
   current slot is applied. If it does not support the slot's mode, nothing is sent
   and the status is `unsupported_mode`.
@@ -228,6 +232,8 @@ the two will overwrite each other.
   comes back, or until an explicit action (assign, resume, resume_auto, program edit).
 - An override whose command never went out (Home Assistant stopped right after saving
   it) is not re-sent after the restart.
+- The temperature selector of `set_manual` in `services.yaml` shows 5-35, but the schema
+  does not enforce these limits (consistent with slots having no limit).
 - Program names are at most 100 characters; ids are slugs of at most 50 characters.
 - `cronotermostato/state` is readable by every authenticated user.
 - Only one configuration entry; one program per room.

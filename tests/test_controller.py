@@ -152,7 +152,6 @@ async def test_unassign_stops_commanding(env):
     await env.store.async_assign(ROOM, env.program_id)
     manager = await env.start()
     env.calls.clear()
-    controller = manager.controllers[ROOM]
     await env.store.async_unassign(ROOM)
     await env.hass.async_block_till_done()
     assert ROOM not in manager.controllers

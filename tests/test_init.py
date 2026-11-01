@@ -1,10 +1,8 @@
 """Tests for setup, unload and the options effect on the room controllers."""
 
-import asyncio
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
-import pytest
 from homeassistant.config_entries import ConfigEntryState
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -138,7 +136,7 @@ async def test_options_change_recomputes_rooms(hass, freezer):
 
 async def test_options_subdiv_changes_calendar(hass, freezer):
     # 29 June 2026 (Monday): Saints Peter and Paul, a holiday only in Rome (RM).
-    calls = await _holiday_env(hass, freezer, datetime(2026, 6, 29, 9, tzinfo=TZ))
+    await _holiday_env(hass, freezer, datetime(2026, 6, 29, 9, tzinfo=TZ))
     entry = _entry("IT")
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)

@@ -46,7 +46,10 @@ Stanza di prova: `climate.______`   Data: ______
 
 - [ ] Impostare `set_manual` e verificare che il comando sia arrivato al termostato.
 - [ ] Riavviare HA.
-- [ ] Dopo il riavvio: `manual: true`, stesso `override_until`, il termostato non ha ricevuto un nuovo comando.
+- [ ] Dopo il riavvio: `manual: true`, stesso `override_until`. Se il termostato era gia' disponibile all'avvio,
+      nessun nuovo comando per la forzatura. Se all'avvio il `climate` era `missing`/`unavailable` (caso normale
+      in un riavvio vero), quando torna disponibile il controllore applica la forzatura attiva: vedere comandi
+      a quel punto e' normale.
 - [ ] Riavviare HA a forzatura scaduta (o attendere la scadenza con HA spento): la forzatura e' sparita e
       viene applicata la fascia corrente.
 - [ ] Riavvio senza forzatura: viene applicata la fascia corrente.

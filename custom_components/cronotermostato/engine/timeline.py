@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta, tzinfo
 
 from .day import normalize_day
-from .models import MINUTES_PER_DAY, Band, Program
+from .models import Band, Program
 
 # A program that never changes (e.g. always "off") would merge forever: stop
 # merging after this many days on each side.

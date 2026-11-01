@@ -14,7 +14,6 @@ from .controller import RoomController
 from .engine.calendar import HolidayCalendar
 from .store import CronoStore
 
-
 _LOGGER = logging.getLogger(__name__)
 
 
