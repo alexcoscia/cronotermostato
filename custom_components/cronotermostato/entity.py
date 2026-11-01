@@ -57,6 +57,7 @@ def slot_dict(slot: Slot | None) -> dict[str, Any] | None:
         "end": slot.end.isoformat(),
         "mode": slot.band.mode,
         "temperature": slot.band.temperature,
+        "preset": slot.band.preset,
         "auto": slot.band.auto,
     }
 

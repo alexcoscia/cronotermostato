@@ -97,7 +97,7 @@
         },
         "week": {
           "name": "Week",
-          "description": "Seven lists (Monday first) of bands {start, end, mode, temperature}, times as HH:MM."
+          "description": "Seven lists (Monday first) of bands {start, end, mode, temperature, preset}, times as HH:MM. In each band temperature and preset are optional, but heat and cool need at least one of them; off takes neither."
         },
         "holiday": {
           "name": "Holiday",
@@ -183,7 +183,7 @@
     },
     "set_manual": {
       "name": "Set manually",
-      "description": "Force a mode and temperature until the end of the current slot. The temperature is required for heat and cool and ignored for off.",
+      "description": "Force a mode, a preset and/or a temperature until the end of the current slot. For heat and cool at least one of preset and temperature is required; both are ignored for off.",
       "fields": {
         "climate_entity_id": {
           "name": "Thermostat",
@@ -195,7 +195,11 @@
         },
         "temperature": {
           "name": "Temperature",
-          "description": "Target temperature."
+          "description": "Target temperature (optional if a preset is given)."
+        },
+        "preset": {
+          "name": "Preset",
+          "description": "Preset of the thermostat (one of its preset_modes, for example home or eco). Sent before the temperature."
         }
       }
     },

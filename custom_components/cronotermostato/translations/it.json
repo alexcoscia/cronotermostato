@@ -97,7 +97,7 @@
         },
         "week": {
           "name": "Settimana",
-          "description": "Sette liste (da lunedì) di fasce {start, end, mode, temperature}, orari HH:MM."
+          "description": "Sette liste (da lunedì) di fasce {start, end, mode, temperature, preset}, orari HH:MM. In ogni fascia temperatura e preset sono facoltativi, ma per heat e cool ne serve almeno uno; off non ha né l'una né l'altro."
         },
         "holiday": {
           "name": "Festivi",
@@ -183,7 +183,7 @@
     },
     "set_manual": {
       "name": "Forza manualmente",
-      "description": "Forza modo e temperatura fino alla fine della fascia corrente. La temperatura è obbligatoria per heat e cool e ignorata per off.",
+      "description": "Forza modo, preset e/o temperatura fino alla fine della fascia corrente. Per heat e cool serve almeno uno fra preset e temperatura; per off sono ignorati.",
       "fields": {
         "climate_entity_id": {
           "name": "Termostato",
@@ -195,7 +195,11 @@
         },
         "temperature": {
           "name": "Temperatura",
-          "description": "Temperatura desiderata."
+          "description": "Temperatura desiderata (facoltativa se c'è un preset)."
+        },
+        "preset": {
+          "name": "Preset",
+          "description": "Preset del termostato (uno dei suoi preset_modes, per esempio home o eco). Viene inviato prima della temperatura."
         }
       }
     },

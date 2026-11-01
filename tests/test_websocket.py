@@ -10,13 +10,16 @@ from test_services import DAY, ROOM, TZ, at, band, env  # noqa: F401
 
 
 def auto(start, end):
-    return {"start": start, "end": end, "mode": "off", "temperature": None, "auto": True}
+    return {
+        "start": start, "end": end, "mode": "off", "temperature": None,
+        "auto": True, "preset": None,
+    }
 
 
-def user(start, end, temperature):
+def user(start, end, temperature, preset=None):
     return {
         "start": start, "end": end, "mode": "heat",
-        "temperature": temperature, "auto": False,
+        "temperature": temperature, "auto": False, "preset": preset,
     }
 
 
@@ -191,3 +194,65 @@ async def test_state_holiday_and_manual(env, hass_ws_client):  # noqa: F811
     assert datetime.fromisoformat(room["override_until"]) > datetime(
         2026, 12, 25, 9, tzinfo=TZ
     )
+
+
+async def test_preview_day_accepts_preset(hass, hass_ws_client):
+    await async_setup(hass, {})
+    client = await hass_ws_client(hass)
+    bands = [
+        {"start": "08:00", "end": "12:00", "mode": "heat", "preset": "home"},
+        {"start": "12:00", "end": "13:00", "mode": "heat", "temperature": 20,
+         "preset": "eco"},
+    ]
+    await client.send_json_auto_id(
+        {"type": "cronotermostato/preview_day", "bands": bands}
+    )
+    msg = await client.receive_json()
+    assert msg["success"]
+    assert msg["result"]["bands"] == [
+        auto("00:00", "08:00"),
+        user("08:00", "12:00", None, "home"),
+        user("12:00", "13:00", 20, "eco"),
+        auto("13:00", "24:00"),
+    ]
+
+
+async def test_preview_day_rejects_preset_on_off_and_empty(hass, hass_ws_client):
+    await async_setup(hass, {})
+    client = await hass_ws_client(hass)
+    for bad in (
+        {"mode": "off", "preset": "home"},
+        {"mode": "heat", "preset": ""},
+        {"mode": "heat"},
+    ):
+        await client.send_json_auto_id(
+            {"type": "cronotermostato/preview_day",
+             "bands": [{"start": "08:00", "end": "12:00", **bad}]}
+        )
+        msg = await client.receive_json()
+        assert not msg["success"] and msg["error"]["code"] == "invalid_format"
+
+
+async def test_state_includes_preset_in_programs_and_slots(env, hass_ws_client):  # noqa: F811
+    env.hass.states.async_set(
+        ROOM, "heat", {"hvac_modes": ["heat", "off"], "preset_modes": ["home"]}
+    )
+    day = [{"start": "08:00", "end": "12:00", "mode": "heat", "preset": "home"}]
+    result = await env.call(
+        "create_program", True, name="P", week=[day] * 7, holiday=[]
+    )
+    await env.call(
+        "assign", program_id=result["program_id"], climate_entity_id=ROOM
+    )
+    await env.hass.async_block_till_done()
+    client = await hass_ws_client(env.hass)
+    await client.send_json_auto_id({"type": "cronotermostato/state"})
+    msg = await client.receive_json()
+    (program,) = msg["result"]["programs"]
+    assert program["week"][0][0]["preset"] == "home"
+    assert program["week_full"][0][0]["preset"] is None
+    (room,) = msg["result"]["rooms"]
+    assert room["slot"]["preset"] == "home"
+    assert room["slot"]["temperature"] is None
+    assert room["next_slot"]["preset"] is None
+    assert room["status"] == "ok"

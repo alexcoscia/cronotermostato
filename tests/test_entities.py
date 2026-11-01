@@ -40,12 +40,18 @@ async def env(hass, freezer):
     calls = []
 
     async def _handle(call):
-        key = "hvac_mode" if call.service == "set_hvac_mode" else "temperature"
+        key = {
+            "set_hvac_mode": "hvac_mode",
+            "set_preset_mode": "preset_mode",
+            "set_temperature": "temperature",
+        }[call.service]
         calls.append((call.data["entity_id"], call.service, call.data[key]))
 
-    for name in ("set_hvac_mode", "set_temperature"):
+    for name in ("set_hvac_mode", "set_preset_mode", "set_temperature"):
         hass.services.async_register("climate", name, _handle)
-    hass.states.async_set(ROOM, "heat", {"hvac_modes": ["heat", "off"]})
+    hass.states.async_set(
+        ROOM, "heat", {"hvac_modes": ["heat", "off"], "preset_modes": ["home", "eco"]}
+    )
     entry = MockConfigEntry(
         domain=DOMAIN,
         data={CONF_COUNTRY: "IT", CONF_SUBDIV: None},
@@ -320,3 +326,67 @@ async def test_switch_off_out_of_climate_range_raises(env):
     assert env.store.overrides == {}
     assert env.calls == []
     assert env.hass.states.get(SWITCH).state == STATE_ON
+
+
+# -- preset -----------------------------------------------------------------
+
+
+async def test_room_sensor_attributes_include_preset(env):
+    day = (Band(480, 720, "heat", None, preset="home"),)
+    prog = await env.store.async_create_program("Preset", (day,) * 7, ())
+    await env.store.async_assign(ROOM, prog.id)
+    await env.hass.async_block_till_done()
+    attrs = env.hass.states.get(SENSOR).attributes
+    assert attrs["slot"]["preset"] == "home"
+    assert attrs["slot"]["temperature"] is None
+    assert attrs["next_slot"]["preset"] is None
+    assert attrs["status"] == "ok"
+    assert env.calls == [(ROOM, "set_hvac_mode", "heat"), (ROOM, "set_preset_mode", "home")]
+
+
+async def test_program_sensor_attributes_include_preset(env):
+    day = (Band(480, 720, "heat", 21.0, preset="eco"),)
+    await env.store.async_update_program(env.program.id, week=(day,) * 7)
+    await env.hass.async_block_till_done()
+    attrs = env.hass.states.get(PROGRAM_SENSOR).attributes
+    assert attrs["week"][0][0]["preset"] == "eco"
+    assert attrs["week_full"][0][0]["preset"] is None
+    assert attrs["week_full"][0][1]["preset"] == "eco"
+
+
+async def test_room_sensor_shows_unsupported_preset(env):
+    day = (Band(480, 720, "heat", None, preset="boost"),)
+    prog = await env.store.async_create_program("Boost", (day,) * 7, ())
+    await env.store.async_assign(ROOM, prog.id)
+    await env.hass.async_block_till_done()
+    assert env.hass.states.get(SENSOR).attributes["status"] == "unsupported_preset"
+    assert env.calls == []
+
+
+async def test_switch_off_keeps_preset_of_slot(env):
+    day = (Band(480, 720, "heat", 21.0, preset="home"),)
+    prog = await env.store.async_create_program("Preset", (day,) * 7, ())
+    await env.store.async_assign(ROOM, prog.id)
+    await env.hass.async_block_till_done()
+    env.calls.clear()
+    await env.hass.services.async_call(
+        "switch", "turn_off", {"entity_id": SWITCH}, blocking=True
+    )
+    override = env.store.overrides[ROOM]
+    assert (override.mode, override.preset, override.temperature) == (
+        "heat", "home", 21.0
+    )
+
+
+async def test_switch_off_preset_only_slot(env):
+    day = (Band(480, 720, "heat", None, preset="eco"),)
+    prog = await env.store.async_create_program("Preset", (day,) * 7, ())
+    await env.store.async_assign(ROOM, prog.id)
+    await env.hass.async_block_till_done()
+    await env.hass.services.async_call(
+        "switch", "turn_off", {"entity_id": SWITCH}, blocking=True
+    )
+    override = env.store.overrides[ROOM]
+    assert (override.mode, override.preset, override.temperature) == (
+        "heat", "eco", None
+    )

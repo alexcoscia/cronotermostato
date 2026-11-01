@@ -38,12 +38,20 @@ async def env(hass, freezer):
     calls = []
 
     async def _handle(call):
-        key = "hvac_mode" if call.service == "set_hvac_mode" else "temperature"
+        key = {
+            "set_hvac_mode": "hvac_mode",
+            "set_preset_mode": "preset_mode",
+            "set_temperature": "temperature",
+        }[call.service]
         calls.append((call.data["entity_id"], call.service, call.data[key]))
 
-    for name in ("set_hvac_mode", "set_temperature"):
+    for name in ("set_hvac_mode", "set_preset_mode", "set_temperature"):
         hass.services.async_register("climate", name, _handle)
-    hass.states.async_set(ROOM, "heat", {"hvac_modes": ["heat", "cool", "off"]})
+    hass.states.async_set(
+        ROOM,
+        "heat",
+        {"hvac_modes": ["heat", "cool", "off"], "preset_modes": ["none", "home", "eco"]},
+    )
     entry = MockConfigEntry(
         domain=DOMAIN,
         data={CONF_COUNTRY: "IT", CONF_SUBDIV: None},
@@ -360,3 +368,110 @@ async def test_set_manual_defaults_when_climate_missing(env):
     assert err.value.translation_placeholders["max"] == "35.0"
     await env.call("set_manual", climate_entity_id=ROOM, mode="heat", temperature=35)
     assert env.store.overrides[ROOM].temperature == 35.0
+
+
+# -- preset -----------------------------------------------------------------
+
+
+async def test_create_program_with_preset_bands(env):
+    day = [
+        {"start": "08:00", "end": "12:00", "mode": "heat", "preset": "home"},
+        {"start": "12:00", "end": "14:00", "mode": "heat", "temperature": 20,
+         "preset": "eco"},
+        {"start": "14:00", "end": "16:00", "mode": "heat", "preset": None,
+         "temperature": 21},
+    ]
+    result = await env.call(
+        "create_program", True, name="Preset", week=[day] * 7, holiday=[]
+    )
+    week0 = env.store.programs[result["program_id"]].week[0]
+    assert [(b.temperature, b.preset) for b in week0] == [
+        (None, "home"), (20.0, "eco"), (21.0, None),
+    ]
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"mode": "heat"},  # neither temperature nor preset
+        {"mode": "heat", "preset": ""},
+        {"mode": "heat", "preset": "  "},
+        {"mode": "off", "preset": "home"},
+    ],
+)
+async def test_create_program_invalid_preset_bands(env, bad):
+    day = [{"start": "08:00", "end": "12:00", **bad}]
+    with pytest.raises(ServiceValidationError) as err:
+        await env.call("create_program", name="X", week=[day] * 7, holiday=[])
+    assert err.value.translation_key == "invalid_program"
+    assert not env.store.programs
+
+
+async def test_update_program_with_preset_commands_room(env):
+    program_id = await env.create()
+    await env.call("assign", program_id=program_id, climate_entity_id=ROOM)
+    env.calls.clear()
+    day = [{"start": "08:00", "end": "12:00", "mode": "heat", "preset": "home"}]
+    await env.call("update_program", program_id=program_id, week=[day] * 7)
+    await env.hass.async_block_till_done()
+    assert env.calls == [
+        (ROOM, "set_hvac_mode", "heat"),
+        (ROOM, "set_preset_mode", "home"),
+    ]
+
+
+async def test_set_manual_preset_only(env):
+    program_id = await env.create()
+    await env.call("assign", program_id=program_id, climate_entity_id=ROOM)
+    env.calls.clear()
+    await env.call("set_manual", climate_entity_id=ROOM, mode="heat", preset="eco")
+    assert env.calls == [
+        (ROOM, "set_hvac_mode", "heat"),
+        (ROOM, "set_preset_mode", "eco"),
+    ]
+    assert env.store.overrides[ROOM].preset == "eco"
+    assert env.store.overrides[ROOM].temperature is None
+
+
+async def test_set_manual_preset_and_temperature(env):
+    program_id = await env.create()
+    await env.call("assign", program_id=program_id, climate_entity_id=ROOM)
+    env.calls.clear()
+    await env.call(
+        "set_manual", climate_entity_id=ROOM, mode="heat", preset="home",
+        temperature=22,
+    )
+    assert [c[1] for c in env.calls] == [
+        "set_hvac_mode", "set_preset_mode", "set_temperature",
+    ]
+
+
+@pytest.mark.parametrize("extra", [{}, {"preset": None}, {"preset": ""}])
+async def test_set_manual_heat_needs_preset_or_temperature(env, extra):
+    program_id = await env.create()
+    await env.call("assign", program_id=program_id, climate_entity_id=ROOM)
+    env.calls.clear()
+    with pytest.raises(ServiceValidationError) as err:
+        await env.call("set_manual", climate_entity_id=ROOM, mode="heat", **extra)
+    assert err.value.translation_key == "invalid_program"
+    assert env.store.overrides == {}
+    assert env.calls == []
+
+
+async def test_set_manual_range_only_with_temperature(env):
+    env.hass.states.async_set(
+        ROOM, "heat",
+        {"hvac_modes": ["heat", "off"], "preset_modes": ["home"],
+         "min_temp": 15, "max_temp": 25},
+    )
+    program_id = await env.create()
+    await env.call("assign", program_id=program_id, climate_entity_id=ROOM)
+    with pytest.raises(ServiceValidationError) as err:
+        await env.call(
+            "set_manual", climate_entity_id=ROOM, mode="heat", preset="home",
+            temperature=30,
+        )
+    assert err.value.translation_key == "temperature_out_of_range"
+    assert env.store.overrides == {}
+    await env.call("set_manual", climate_entity_id=ROOM, mode="heat", preset="home")
+    assert env.store.overrides[ROOM].preset == "home"

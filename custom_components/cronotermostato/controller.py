@@ -5,7 +5,7 @@ Design decisions:
 * Commands are sent only when needed: at start, after an explicit refresh
   (assignment, resume, program edit, thermostat back online, override
   start/end) the current setting is always applied; at a slot boundary it is
-  applied only if (mode, temperature) differ from what was applied last. Long
+  applied only if (mode, preset, temperature) differ from what was applied last. Long
   slots are split every 31 days by the timeline, so a boundary does not mean
   a change and nothing is re-commanded then. There is no periodic command.
 * All instants are compared in UTC: ``Timeline`` datetimes sharing a tzinfo
@@ -28,7 +28,14 @@ Known limits:
 * A heat/cool setting outside the ``min_temp``/``max_temp`` of the climate
   (defaults 5-35 when it declares none) is not sent at all, neither mode nor
   temperature: status ``out_of_range``, one warning per change, retried at the
-  next boundary or explicit refresh. ``off`` has no temperature.
+  next boundary or explicit refresh. ``off`` has no temperature. A band
+  without a temperature (preset only) is never range-checked.
+* A preset not listed in the ``preset_modes`` of the climate (``none`` is a
+  valid preset when listed) is treated like an unsupported mode: nothing is
+  sent, not even the mode, status ``unsupported_preset``, one warning per
+  change. Commands go in the order mode, preset, temperature, each blocking;
+  a failure stops the next ones. Some thermostats change the preset by
+  themselves when they receive a temperature.
 * After ``error`` the next attempt happens only at the next slot boundary, when
   the thermostat comes back, or on an explicit refresh. There is no periodic
   retry.
@@ -60,7 +67,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import DEFAULT_MAX_TEMP, DEFAULT_MIN_TEMP, DOMAIN, SIGNAL_ROOM_UPDATED
 from .engine.calendar import HolidayCalendar
-from .engine.models import Mode, Program, ProgramError
+from .engine.models import Mode, Program, ProgramError, validate_setting
 from .engine.timeline import Slot, Timeline
 from .store import CronoStore, Override
 
@@ -72,6 +79,7 @@ RoomStatus = Literal[
     "unassigned",
     "unavailable",
     "unsupported_mode",
+    "unsupported_preset",
     "out_of_range",
     "missing",
     "error",
@@ -136,10 +144,11 @@ class RoomController:
         self._unsub_timer: Callable[[], None] | None = None
         self._timeline: Timeline | None = None
         self._timeline_program: Program | None = None
-        self._last_applied: tuple[Mode, float | None] | None = None
+        self._last_applied: tuple[Mode, str | None, float | None] | None = None
         self._signature: Any = None
         self._forced_evals = 0
         self._range_warned: tuple[Mode, float | None] | None = None
+        self._preset_warned: tuple[Mode, str] | None = None
 
     # -- lifecycle -------------------------------------------------------
 
@@ -171,11 +180,16 @@ class RoomController:
 
     # -- user actions ----------------------------------------------------
 
-    async def async_set_manual(self, mode: Mode, temperature: float | None) -> None:
+    async def async_set_manual(
+        self, mode: Mode, temperature: float | None, preset: str | None = None
+    ) -> None:
         """Force a setting until the end of the current slot."""
         if self._climate_id not in self._store.assignments:
             raise ProgramError(f"Room not assigned: {self._climate_id!r}")
-        if mode != "off" and temperature is not None:
+        if mode == "off":
+            temperature, preset = None, None
+        validate_setting(mode, temperature, preset)
+        if temperature is not None:
             low, high = temperature_limits(self._hass.states.get(self._climate_id))
             if not low <= temperature <= high:
                 raise ServiceValidationError(
@@ -191,9 +205,7 @@ class RoomController:
         timeline = self._get_timeline(rebuild=False)
         now = dt_util.utcnow()
         slot = timeline.slot_at(now.astimezone(dt_util.get_default_time_zone()))
-        override = Override(
-            mode, None if mode == "off" else temperature, slot.end.astimezone(UTC)
-        )
+        override = Override(mode, temperature, slot.end.astimezone(UTC), preset)
         seen = self._forced_evals
         try:
             await self._store.async_set_override(self._climate_id, override)
@@ -355,16 +367,16 @@ class RoomController:
             self._last_applied = None
         else:
             assert cstate is not None
-            mode, temperature = (
-                (override.mode, override.temperature)
+            mode, preset, temperature = (
+                (override.mode, override.preset, override.temperature)
                 if override is not None
-                else (slot.band.mode, slot.band.temperature)
+                else (slot.band.mode, slot.band.preset, slot.band.temperature)
             )
-            key = (mode, temperature)
+            key = (mode, preset, temperature)
             if startup and override is not None:
                 self._last_applied = key  # already held by the thermostat
             elif force or key != self._last_applied:
-                status = await self._apply(cstate, mode, temperature)
+                status = await self._apply(cstate, mode, preset, temperature)
                 if self._stopped:
                     return
                 self._last_applied = key if status == "ok" else None
@@ -382,11 +394,25 @@ class RoomController:
         )
 
     async def _apply(
-        self, cstate: State, mode: Mode, temperature: float | None
+        self,
+        cstate: State,
+        mode: Mode,
+        preset: str | None,
+        temperature: float | None,
     ) -> RoomStatus:
         if mode not in (cstate.attributes.get("hvac_modes") or []):
             _LOGGER.warning("%s does not support mode %s", self._climate_id, mode)
             return "unsupported_mode"
+        if preset is not None:
+            if preset not in (cstate.attributes.get("preset_modes") or []):
+                if self._preset_warned != (mode, preset):
+                    self._preset_warned = (mode, preset)
+                    _LOGGER.warning(
+                        "%s does not support preset %s, nothing sent",
+                        self._climate_id, preset,
+                    )
+                return "unsupported_preset"
+        self._preset_warned = None
         if temperature is not None:
             low, high = temperature_limits(cstate)
             if not low <= temperature <= high:
@@ -408,6 +434,13 @@ class RoomController:
                 {ATTR_ENTITY_ID: self._climate_id, "hvac_mode": mode},
                 blocking=True,
             )
+            if preset is not None and not self._stopped:
+                await self._hass.services.async_call(
+                    "climate",
+                    "set_preset_mode",
+                    {ATTR_ENTITY_ID: self._climate_id, "preset_mode": preset},
+                    blocking=True,
+                )
             if temperature is not None and not self._stopped:
                 await self._hass.services.async_call(
                     "climate",

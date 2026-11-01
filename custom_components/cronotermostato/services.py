@@ -11,8 +11,11 @@ Design decisions:
   translated ``invalid_program`` message; the engine text is the placeholder.
 * Bands are validated by ``program_from_dict`` (the same code used when the
   store is loaded), not by a second implementation here.
-* ``set_manual`` with mode ``off`` ignores the temperature, like
-  ``RoomController.async_set_manual``; ``cool``/``heat`` need one.
+* ``set_manual`` with mode ``off`` ignores temperature and preset, like
+  ``RoomController.async_set_manual``; ``cool``/``heat`` need at least one of
+  the two (otherwise ``invalid_program``). The temperature range is checked
+  only when a temperature is given. The preset support of the thermostat is
+  not checked here: the room then shows ``unsupported_preset``.
 """
 
 from __future__ import annotations
@@ -41,6 +44,7 @@ _BAND = vol.Schema(
         vol.Required("end"): cv.string,
         vol.Required("mode"): vol.In(MODES),
         vol.Optional("temperature"): vol.Any(None, vol.Coerce(float)),
+        vol.Optional("preset"): vol.Any(None, cv.string),
         # Automatic bands are accepted and discarded by the store.
         vol.Optional("auto"): cv.boolean,
     }
@@ -75,6 +79,7 @@ MANUAL_SCHEMA = vol.Schema(
         vol.Required("climate_entity_id"): _CLIMATE,
         vol.Required("mode"): vol.In(MODES),
         vol.Optional("temperature"): vol.Any(None, vol.Coerce(float)),
+        vol.Optional("preset"): vol.Any(None, cv.string),
     }
 )
 
@@ -192,7 +197,9 @@ def async_register_services(hass: HomeAssistant) -> None:
         )
         try:
             await controller.async_set_manual(
-                call.data["mode"], call.data.get("temperature")
+                call.data["mode"],
+                call.data.get("temperature"),
+                call.data.get("preset"),
             )
         except ProgramError as err:
             raise _program_error(err) from err

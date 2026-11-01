@@ -61,7 +61,9 @@ class AutoSwitch(RoomEntity, SwitchEntity):
                 translation_domain=DOMAIN, translation_key="room_not_ready"
             )
         try:
-            await controller.async_set_manual(slot.band.mode, slot.band.temperature)
+            await controller.async_set_manual(
+                slot.band.mode, slot.band.temperature, slot.band.preset
+            )
         except ProgramError as err:
             raise HomeAssistantError(str(err)) from err
 

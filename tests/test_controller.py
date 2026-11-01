@@ -81,7 +81,11 @@ async def env(hass, freezer):
         async def _handle(call):
             if name in e.fail and call.data["entity_id"] == ROOM:
                 raise e.fail[name]
-            key = "hvac_mode" if name == "set_hvac_mode" else "temperature"
+            key = {
+                "set_hvac_mode": "hvac_mode",
+                "set_preset_mode": "preset_mode",
+                "set_temperature": "temperature",
+            }[name]
             if call.data["entity_id"] != ROOM:
                 e.other_calls.append((call.data["entity_id"], name))
                 return
@@ -89,7 +93,7 @@ async def env(hass, freezer):
 
         return _handle
 
-    for name in ("set_hvac_mode", "set_temperature"):
+    for name in ("set_hvac_mode", "set_preset_mode", "set_temperature"):
         hass.services.async_register("climate", name, handler(name))
     e.set_climate()
     yield e
@@ -859,3 +863,195 @@ async def test_set_manual_uses_defaults_when_climate_missing(env):
         await controller.async_set_manual("heat", 36.0)
     await controller.async_set_manual("heat", 30.0)  # inside 5-35
     assert env.store.overrides[ROOM].temperature == 30.0
+
+
+# -- preset -----------------------------------------------------------------
+
+PRESETS = ["none", "away", "comfort", "eco", "home", "sleep", "activity"]
+
+
+async def _assign_week(env, band, name="Preset"):
+    prog = await env.store.async_create_program(name, ((band,),) * 7, ())
+    await env.store.async_assign(ROOM, prog.id)
+    return prog
+
+
+async def test_preset_and_temperature_order(env):
+    """mode, then preset, then temperature."""
+    env.set_climate(preset_modes=PRESETS)
+    await _assign_week(env, Band(480, 720, "heat", 21.0, preset="comfort"))
+    await env.start()
+    assert env.calls == [
+        ("set_hvac_mode", "heat"),
+        ("set_preset_mode", "comfort"),
+        ("set_temperature", 21.0),
+    ]
+
+
+async def test_preset_only_sends_no_temperature(env):
+    env.set_climate(preset_modes=PRESETS)
+    await _assign_week(env, Band(480, 720, "heat", None, preset="home"))
+    manager = await env.start()
+    assert env.calls == [("set_hvac_mode", "heat"), ("set_preset_mode", "home")]
+    assert manager.controllers[ROOM].state.status == "ok"
+
+
+async def test_preset_none_is_valid_when_listed(env):
+    env.set_climate(preset_modes=PRESETS)
+    await _assign_week(env, Band(480, 720, "heat", None, preset="none"))
+    manager = await env.start()
+    assert env.calls == [("set_hvac_mode", "heat"), ("set_preset_mode", "none")]
+    assert manager.controllers[ROOM].state.status == "ok"
+
+
+async def test_unsupported_preset_sends_nothing_not_even_mode(env, caplog):
+    env.set_climate(preset_modes=PRESETS)
+    await _assign_week(env, Band(480, 720, "heat", 21.0, preset="boost"))
+    manager = await env.start()
+    assert env.calls == []
+    state = manager.controllers[ROOM].state
+    assert state.status == "unsupported_preset"
+    assert manager.controllers[ROOM]._last_applied is None
+    assert "boost" in caplog.text
+    await env.go(at(26, 12))  # automatic off slot recovers
+    assert env.calls == [("set_hvac_mode", "off")]
+    assert manager.controllers[ROOM].state.status == "ok"
+
+
+async def test_unsupported_preset_when_climate_has_no_presets(env):
+    await _assign_week(env, Band(480, 720, "heat", None, preset="home"))
+    manager = await env.start()  # no preset_modes attribute at all
+    assert env.calls == []
+    assert manager.controllers[ROOM].state.status == "unsupported_preset"
+
+
+async def test_unsupported_preset_warns_once_per_change(env, caplog):
+    env.set_climate(preset_modes=PRESETS)
+    await _assign_week(env, Band(480, 720, "heat", 21.0, preset="boost"))
+    manager = await env.start()
+    await manager.controllers[ROOM].async_refresh()
+    await manager.controllers[ROOM].async_refresh()
+    assert caplog.text.count("does not support preset") == 1
+
+
+async def test_unsupported_mode_wins_over_preset_check(env):
+    env.set_climate(preset_modes=PRESETS)
+    await _assign_week(env, Band(480, 720, "cool", None, preset="home"))
+    manager = await env.start()
+    assert env.calls == []
+    assert manager.controllers[ROOM].state.status == "unsupported_mode"
+
+
+async def test_range_check_skipped_without_temperature(env):
+    """A preset-only band is fine even if the climate limits are odd."""
+    env.set_climate(preset_modes=PRESETS, min_temp=15, max_temp=22)
+    await _assign_week(env, Band(480, 720, "heat", None, preset="home"))
+    manager = await env.start()
+    assert manager.controllers[ROOM].state.status == "ok"
+    assert env.calls == [("set_hvac_mode", "heat"), ("set_preset_mode", "home")]
+
+
+async def test_range_check_still_applies_with_preset_and_temperature(env):
+    env.set_climate(preset_modes=PRESETS, min_temp=15, max_temp=22)
+    await _assign_week(env, Band(480, 720, "heat", 30.0, preset="home"))
+    manager = await env.start()
+    assert env.calls == []
+    assert manager.controllers[ROOM].state.status == "out_of_range"
+
+
+async def test_preset_failure_stops_following_commands(env):
+    env.set_climate(preset_modes=PRESETS)
+    env.fail["set_preset_mode"] = HomeAssistantError("boom")
+    await _assign_week(env, Band(480, 720, "heat", 21.0, preset="home"))
+    manager = await env.start()
+    assert env.calls == [("set_hvac_mode", "heat")]  # no set_temperature
+    assert manager.controllers[ROOM].state.status == "error"
+
+
+async def test_same_command_key_includes_preset(env):
+    """Adjacent bands that differ only by preset are two slots: command sent."""
+    env.set_climate(preset_modes=PRESETS)
+    day = (
+        Band(480, 720, "heat", None, preset="home"),
+        Band(720, 900, "heat", None, preset="eco"),
+    )
+    prog = await env.store.async_create_program("Due", (day,) * 7, ())
+    await env.store.async_assign(ROOM, prog.id)
+    await env.start()
+    env.calls.clear()
+    await env.go(at(26, 12))
+    assert env.calls == [("set_hvac_mode", "heat"), ("set_preset_mode", "eco")]
+
+
+async def test_manual_with_preset(env):
+    env.set_climate(preset_modes=PRESETS)
+    await env.store.async_assign(ROOM, env.program_id)
+    manager = await env.start()
+    controller = manager.controllers[ROOM]
+    env.calls.clear()
+    await controller.async_set_manual("heat", None, "eco")
+    assert env.calls == [("set_hvac_mode", "heat"), ("set_preset_mode", "eco")]
+    assert env.store.overrides[ROOM].preset == "eco"
+    assert env.store.overrides[ROOM].temperature is None
+    assert controller.state.manual is True
+
+
+async def test_manual_with_preset_and_temperature_order(env):
+    env.set_climate(preset_modes=PRESETS)
+    await env.store.async_assign(ROOM, env.program_id)
+    manager = await env.start()
+    env.calls.clear()
+    await manager.controllers[ROOM].async_set_manual("heat", 22.0, "home")
+    assert env.calls == [
+        ("set_hvac_mode", "heat"),
+        ("set_preset_mode", "home"),
+        ("set_temperature", 22.0),
+    ]
+
+
+async def test_manual_needs_preset_or_temperature(env):
+    await env.store.async_assign(ROOM, env.program_id)
+    manager = await env.start()
+    env.calls.clear()
+    with pytest.raises(ProgramError):
+        await manager.controllers[ROOM].async_set_manual("heat", None, None)
+    assert env.calls == []
+
+
+async def test_manual_off_ignores_preset(env):
+    """Like the temperature, a preset given with ``off`` is dropped."""
+    env.set_climate(preset_modes=PRESETS)
+    await env.store.async_assign(ROOM, env.program_id)
+    manager = await env.start()
+    env.calls.clear()
+    await manager.controllers[ROOM].async_set_manual("off", 19.0, "home")
+    assert env.calls == [("set_hvac_mode", "off")]
+    assert env.store.overrides[ROOM].preset is None
+
+
+async def test_manual_unsupported_preset_stores_but_sends_nothing(env):
+    env.set_climate(preset_modes=PRESETS)
+    await env.store.async_assign(ROOM, env.program_id)
+    manager = await env.start()
+    env.calls.clear()
+    await manager.controllers[ROOM].async_set_manual("heat", None, "boost")
+    assert env.calls == []
+    assert manager.controllers[ROOM].state.status == "unsupported_preset"
+
+
+async def test_manual_range_not_checked_without_temperature(env):
+    env.set_climate(preset_modes=PRESETS, min_temp=15, max_temp=22)
+    await env.store.async_assign(ROOM, env.program_id)
+    manager = await env.start()
+    await manager.controllers[ROOM].async_set_manual("heat", None, "home")
+    assert manager.controllers[ROOM].state.manual is True
+
+
+async def test_restart_keeps_override_with_preset_without_resending(env):
+    env.set_climate(preset_modes=PRESETS)
+    await env.store.async_assign(ROOM, env.program_id)
+    until = at(26, 12).astimezone(UTC)
+    await env.store.async_set_override(ROOM, Override("heat", None, until, "eco"))
+    manager = await env.start()
+    assert env.calls == []
+    assert manager.controllers[ROOM].state.manual is True
