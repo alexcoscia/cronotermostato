@@ -3,7 +3,7 @@
   "name": "Cronotermostato",
   "codeowners": ["@alexcoscia"],
   "config_flow": true,
-  "dependencies": ["websocket_api"],
+  "dependencies": ["frontend", "http", "panel_custom", "websocket_api"],
   "documentation": "https://github.com/alexcoscia/cronotermostato",
   "integration_type": "service",
   "iot_class": "calculated",

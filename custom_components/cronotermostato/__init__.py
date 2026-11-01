@@ -12,6 +12,7 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 
 from .const import CONF_COUNTRY, CONF_SUBDIV, DOMAIN, PLATFORMS
+from .frontend import async_register_static
 from .engine.calendar import HolidayCalendar
 from .manager import Manager
 from .services import async_register_services
@@ -45,6 +46,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Register services and WebSocket commands (they exist even without a loaded entry)."""
     async_register_services(hass)
     async_register_websocket_api(hass)
+    await async_register_static(hass)
     return True
 
 

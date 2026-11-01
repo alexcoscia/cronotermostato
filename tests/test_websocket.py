@@ -7,6 +7,7 @@ import pytest
 from custom_components.cronotermostato import async_setup
 
 from test_services import DAY, ROOM, TZ, at, band, env  # noqa: F401
+from homeassistant.setup import async_setup_component
 
 
 def auto(start, end):
@@ -33,6 +34,7 @@ FIVE = [
 
 
 async def test_preview_day_returns_five_bands(hass, hass_ws_client):
+    assert await async_setup_component(hass, "http", {})
     await async_setup(hass, {})
     client = await hass_ws_client(hass)
     await client.send_json_auto_id(
@@ -44,6 +46,7 @@ async def test_preview_day_returns_five_bands(hass, hass_ws_client):
 
 
 async def test_preview_day_discards_incoming_auto_bands(hass, hass_ws_client):
+    assert await async_setup_component(hass, "http", {})
     await async_setup(hass, {})
     client = await hass_ws_client(hass)
     await client.send_json_auto_id(
@@ -56,6 +59,7 @@ async def test_preview_day_discards_incoming_auto_bands(hass, hass_ws_client):
 
 async def test_preview_day_stale_auto_band_does_not_overlap(hass, hass_ws_client):
     """A stale auto band that overlaps a user band is dropped, not an error."""
+    assert await async_setup_component(hass, "http", {})
     await async_setup(hass, {})
     client = await hass_ws_client(hass)
     bands = [auto("00:00", "24:00"), user("08:00", "12:00", 23.0)]
@@ -79,6 +83,7 @@ async def test_preview_day_stale_auto_band_does_not_overlap(hass, hass_ws_client
     ],
 )
 async def test_preview_day_invalid(hass, hass_ws_client, bands):
+    assert await async_setup_component(hass, "http", {})
     await async_setup(hass, {})
     client = await hass_ws_client(hass)
     await client.send_json_auto_id(
@@ -90,6 +95,7 @@ async def test_preview_day_invalid(hass, hass_ws_client, bands):
 
 
 async def test_countries(hass, hass_ws_client):
+    assert await async_setup_component(hass, "http", {})
     await async_setup(hass, {})
     client = await hass_ws_client(hass)
     await client.send_json_auto_id({"type": "cronotermostato/countries"})
@@ -100,6 +106,7 @@ async def test_countries(hass, hass_ws_client):
 
 
 async def test_state_without_entry(hass, hass_ws_client):
+    assert await async_setup_component(hass, "http", {})
     await async_setup(hass, {})
     client = await hass_ws_client(hass)
     await client.send_json_auto_id({"type": "cronotermostato/state"})
@@ -197,6 +204,7 @@ async def test_state_holiday_and_manual(env, hass_ws_client):  # noqa: F811
 
 
 async def test_preview_day_accepts_preset(hass, hass_ws_client):
+    assert await async_setup_component(hass, "http", {})
     await async_setup(hass, {})
     client = await hass_ws_client(hass)
     bands = [
@@ -218,6 +226,7 @@ async def test_preview_day_accepts_preset(hass, hass_ws_client):
 
 
 async def test_preview_day_rejects_preset_on_off_and_empty(hass, hass_ws_client):
+    assert await async_setup_component(hass, "http", {})
     await async_setup(hass, {})
     client = await hass_ws_client(hass)
     for bad in (

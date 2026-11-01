@@ -13,6 +13,7 @@ from pytest_homeassistant_custom_component.common import (
 )
 
 from custom_components.cronotermostato.const import CONF_COUNTRY, CONF_SUBDIV, DOMAIN
+from homeassistant.setup import async_setup_component
 
 TZ = ZoneInfo("Europe/Rome")
 ROOM = "climate.salotto"
@@ -92,6 +93,8 @@ async def env(hass, freezer):
 
 async def test_services_exist_without_entry(hass):
     from custom_components.cronotermostato import async_setup
+
+    assert await async_setup_component(hass, "http", {})
 
     assert await async_setup(hass, {})
     for name in (

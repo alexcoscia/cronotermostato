@@ -4,6 +4,11 @@ from homeassistant.const import Platform
 
 DOMAIN = "cronotermostato"
 
+STATIC_URL_BASE = "/cronotermostato_static"
+PANEL_URL_PATH = "cronotermostato"
+PANEL_ELEMENT = "cronotermostato-panel"
+CARD_ELEMENT = "cronotermostato-card"
+
 SIGNAL_ROOM_UPDATED = "cronotermostato_room_updated_{}"
 
 CONF_COUNTRY = "country"
