@@ -282,7 +282,14 @@ the two will overwrite each other.
 uv venv --python 3.14 .venv
 uv pip install --python .venv/bin/python -r requirements_test.txt
 uv run pytest
+node --test "tests/frontend/*.test.mjs"
 ```
+
+The last command runs the tests of the editor's pure JavaScript logic (Node 22, no
+dependencies to install). The cases in `tests/frontend/cases.json` are shared with
+`tests/test_frontend_parity.py`, so the editor and the server validate programs the same way.
+The editor ships Lit as a single vendored file, `frontend/lit.js` (see the header for version,
+origin and checksum); there is no build step.
 
 ## License
 

@@ -1,0 +1,170 @@
+[
+ {
+  "name": "numeric string temperature becomes number",
+  "draft": {
+   "name": "P",
+   "week": [
+    [
+     {
+      "start": "08:00",
+      "end": "12:00",
+      "mode": "heat",
+      "temperature": "21.5",
+      "preset": "",
+      "auto": false
+     }
+    ],
+    [],
+    [],
+    [],
+    [],
+    [],
+    []
+   ],
+   "holiday": []
+  },
+  "expected": {
+   "name": "P",
+   "week": [
+    [
+     {
+      "start": "08:00",
+      "end": "12:00",
+      "mode": "heat",
+      "temperature": 21.5
+     }
+    ],
+    [],
+    [],
+    [],
+    [],
+    [],
+    []
+   ],
+   "holiday": []
+  }
+ },
+ {
+  "name": "off drops temperature and preset, auto bands are dropped",
+  "draft": {
+   "name": "P",
+   "week": [
+    [
+     {
+      "start": "00:00",
+      "end": "08:00",
+      "mode": "off",
+      "temperature": 18,
+      "preset": "eco",
+      "auto": false
+     },
+     {
+      "start": "08:00",
+      "end": "24:00",
+      "mode": "off",
+      "temperature": null,
+      "preset": null,
+      "auto": true
+     }
+    ],
+    [],
+    [],
+    [],
+    [],
+    [],
+    []
+   ],
+   "holiday": []
+  },
+  "expected": {
+   "name": "P",
+   "week": [
+    [
+     {
+      "start": "00:00",
+      "end": "08:00",
+      "mode": "off"
+     }
+    ],
+    [],
+    [],
+    [],
+    [],
+    [],
+    []
+   ],
+   "holiday": []
+  }
+ },
+ {
+  "name": "bands are sorted, preset only kept",
+  "draft": {
+   "name": "<script>x</script>",
+   "week": [
+    [
+     {
+      "start": "12:00",
+      "end": "18:00",
+      "mode": "cool",
+      "temperature": null,
+      "preset": "eco"
+     },
+     {
+      "start": "08:00",
+      "end": "12:00",
+      "mode": "heat",
+      "temperature": 20,
+      "preset": null
+     }
+    ],
+    [],
+    [],
+    [],
+    [],
+    [],
+    []
+   ],
+   "holiday": [
+    {
+     "start": "09:00",
+     "end": "10:00",
+     "mode": "heat",
+     "temperature": 19
+    }
+   ]
+  },
+  "expected": {
+   "name": "<script>x</script>",
+   "week": [
+    [
+     {
+      "start": "08:00",
+      "end": "12:00",
+      "mode": "heat",
+      "temperature": 20
+     },
+     {
+      "start": "12:00",
+      "end": "18:00",
+      "mode": "cool",
+      "preset": "eco"
+     }
+    ],
+    [],
+    [],
+    [],
+    [],
+    [],
+    []
+   ],
+   "holiday": [
+    {
+     "start": "09:00",
+     "end": "10:00",
+     "mode": "heat",
+     "temperature": 19
+    }
+   ]
+  }
+ }
+]

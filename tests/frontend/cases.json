@@ -1,0 +1,649 @@
+[
+ {
+  "name": "empty day",
+  "day": [],
+  "expect": "valid"
+ },
+ {
+  "name": "simple band",
+  "day": [
+   {
+    "start": "08:00",
+    "end": "12:00",
+    "mode": "heat",
+    "temperature": 20
+   }
+  ],
+  "expect": "valid"
+ },
+ {
+  "name": "whole day 00:00-24:00",
+  "day": [
+   {
+    "start": "00:00",
+    "end": "24:00",
+    "mode": "heat",
+    "temperature": 20
+   }
+  ],
+  "expect": "valid"
+ },
+ {
+  "name": "end at 24:00 after another band",
+  "day": [
+   {
+    "start": "00:00",
+    "end": "23:59",
+    "mode": "heat",
+    "temperature": 20
+   },
+   {
+    "start": "23:59",
+    "end": "24:00",
+    "mode": "off"
+   }
+  ],
+  "expect": "valid"
+ },
+ {
+  "name": "adjacent bands",
+  "day": [
+   {
+    "start": "08:00",
+    "end": "12:00",
+    "mode": "heat",
+    "temperature": 20
+   },
+   {
+    "start": "12:00",
+    "end": "18:00",
+    "mode": "cool",
+    "temperature": 25
+   }
+  ],
+  "expect": "valid"
+ },
+ {
+  "name": "unsorted bands are fine",
+  "day": [
+   {
+    "start": "12:00",
+    "end": "18:00",
+    "mode": "heat",
+    "temperature": 20
+   },
+   {
+    "start": "08:00",
+    "end": "12:00",
+    "mode": "heat",
+    "temperature": 20
+   }
+  ],
+  "expect": "valid"
+ },
+ {
+  "name": "heat with only preset",
+  "day": [
+   {
+    "start": "08:00",
+    "end": "12:00",
+    "mode": "heat",
+    "preset": "eco"
+   }
+  ],
+  "expect": "valid"
+ },
+ {
+  "name": "heat with temperature and preset",
+  "day": [
+   {
+    "start": "08:00",
+    "end": "12:00",
+    "mode": "heat",
+    "temperature": 21.5,
+    "preset": "comfort"
+   }
+  ],
+  "expect": "valid"
+ },
+ {
+  "name": "cool with integer temperature",
+  "day": [
+   {
+    "start": "08:00",
+    "end": "12:00",
+    "mode": "cool",
+    "temperature": 24
+   }
+  ],
+  "expect": "valid"
+ },
+ {
+  "name": "off without setting",
+  "day": [
+   {
+    "start": "08:00",
+    "end": "12:00",
+    "mode": "off"
+   }
+  ],
+  "expect": "valid"
+ },
+ {
+  "name": "temperature null with preset",
+  "day": [
+   {
+    "start": "08:00",
+    "end": "12:00",
+    "mode": "heat",
+    "temperature": null,
+    "preset": "eco"
+   }
+  ],
+  "expect": "valid"
+ },
+ {
+  "name": "auto false explicit",
+  "day": [
+   {
+    "start": "08:00",
+    "end": "12:00",
+    "mode": "heat",
+    "temperature": 20,
+    "auto": false
+   }
+  ],
+  "expect": "valid"
+ },
+ {
+  "name": "holiday part only",
+  "day": [],
+  "expect": "valid",
+  "holiday": [
+   {
+    "start": "07:00",
+    "end": "23:00",
+    "mode": "heat",
+    "temperature": 20
+   }
+  ]
+ },
+ {
+  "name": "midnight end then next day starts at midnight",
+  "day": [
+   {
+    "start": "22:00",
+    "end": "24:00",
+    "mode": "heat",
+    "temperature": 20
+   }
+  ],
+  "expect": "valid",
+  "day1": [
+   {
+    "start": "00:00",
+    "end": "06:00",
+    "mode": "heat",
+    "temperature": 20
+   }
+  ]
+ },
+ {
+  "name": "program name is plain text",
+  "day": [
+   {
+    "start": "08:00",
+    "end": "12:00",
+    "mode": "heat",
+    "temperature": 20
+   }
+  ],
+  "expect": "valid",
+  "program_name": "<img src=x onerror=alert(1)>"
+ },
+ {
+  "name": "24:00 as start",
+  "day": [
+   {
+    "start": "24:00",
+    "end": "24:00",
+    "mode": "heat",
+    "temperature": 20
+   }
+  ],
+  "expect": "bad_time"
+ },
+ {
+  "name": "24:00 as start, later end impossible",
+  "day": [
+   {
+    "start": "24:00",
+    "end": "24:01",
+    "mode": "heat",
+    "temperature": 20
+   }
+  ],
+  "expect": "bad_time"
+ },
+ {
+  "name": "end 00:00",
+  "day": [
+   {
+    "start": "08:00",
+    "end": "00:00",
+    "mode": "heat",
+    "temperature": 20
+   }
+  ],
+  "expect": "bad_time"
+ },
+ {
+  "name": "end equals start",
+  "day": [
+   {
+    "start": "08:00",
+    "end": "08:00",
+    "mode": "heat",
+    "temperature": 20
+   }
+  ],
+  "expect": "end_before_start"
+ },
+ {
+  "name": "end before start",
+  "day": [
+   {
+    "start": "12:00",
+    "end": "08:00",
+    "mode": "heat",
+    "temperature": 20
+   }
+  ],
+  "expect": "end_before_start"
+ },
+ {
+  "name": "overlap of one minute",
+  "day": [
+   {
+    "start": "08:00",
+    "end": "12:01",
+    "mode": "heat",
+    "temperature": 20
+   },
+   {
+    "start": "12:00",
+    "end": "18:00",
+    "mode": "heat",
+    "temperature": 20
+   }
+  ],
+  "expect": "overlap"
+ },
+ {
+  "name": "overlap, second listed first",
+  "day": [
+   {
+    "start": "12:00",
+    "end": "18:00",
+    "mode": "heat",
+    "temperature": 20
+   },
+   {
+    "start": "08:00",
+    "end": "12:01",
+    "mode": "heat",
+    "temperature": 20
+   }
+  ],
+  "expect": "overlap"
+ },
+ {
+  "name": "band inside another",
+  "day": [
+   {
+    "start": "08:00",
+    "end": "18:00",
+    "mode": "heat",
+    "temperature": 20
+   },
+   {
+    "start": "10:00",
+    "end": "11:00",
+    "mode": "heat",
+    "temperature": 20
+   }
+  ],
+  "expect": "overlap"
+ },
+ {
+  "name": "heat without temperature or preset",
+  "day": [
+   {
+    "start": "08:00",
+    "end": "12:00",
+    "mode": "heat"
+   }
+  ],
+  "expect": "missing_setting"
+ },
+ {
+  "name": "cool without temperature or preset",
+  "day": [
+   {
+    "start": "08:00",
+    "end": "12:00",
+    "mode": "cool"
+   }
+  ],
+  "expect": "missing_setting"
+ },
+ {
+  "name": "off with temperature",
+  "day": [
+   {
+    "start": "08:00",
+    "end": "12:00",
+    "mode": "off",
+    "temperature": 18
+   }
+  ],
+  "expect": "off_with_setting"
+ },
+ {
+  "name": "off with preset",
+  "day": [
+   {
+    "start": "08:00",
+    "end": "12:00",
+    "mode": "off",
+    "preset": "eco"
+   }
+  ],
+  "expect": "off_with_setting"
+ },
+ {
+  "name": "temperature as text",
+  "day": [
+   {
+    "start": "08:00",
+    "end": "12:00",
+    "mode": "heat",
+    "temperature": "20"
+   }
+  ],
+  "expect": "bad_temperature"
+ },
+ {
+  "name": "temperature as boolean",
+  "day": [
+   {
+    "start": "08:00",
+    "end": "12:00",
+    "mode": "heat",
+    "temperature": true
+   }
+  ],
+  "expect": "bad_temperature"
+ },
+ {
+  "name": "temperature as list",
+  "day": [
+   {
+    "start": "08:00",
+    "end": "12:00",
+    "mode": "heat",
+    "temperature": [
+     20
+    ]
+   }
+  ],
+  "expect": "bad_temperature"
+ },
+ {
+  "name": "unknown mode",
+  "day": [
+   {
+    "start": "08:00",
+    "end": "12:00",
+    "mode": "auto",
+    "temperature": 20
+   }
+  ],
+  "expect": "bad_mode"
+ },
+ {
+  "name": "empty mode",
+  "day": [
+   {
+    "start": "08:00",
+    "end": "12:00",
+    "mode": "",
+    "temperature": 20
+   }
+  ],
+  "expect": "bad_mode"
+ },
+ {
+  "name": "mode with wrong case",
+  "day": [
+   {
+    "start": "08:00",
+    "end": "12:00",
+    "mode": "HEAT",
+    "temperature": 20
+   }
+  ],
+  "expect": "bad_mode"
+ },
+ {
+  "name": "blank preset",
+  "day": [
+   {
+    "start": "08:00",
+    "end": "12:00",
+    "mode": "heat",
+    "temperature": 20,
+    "preset": "  "
+   }
+  ],
+  "expect": "bad_preset"
+ },
+ {
+  "name": "empty preset",
+  "day": [
+   {
+    "start": "08:00",
+    "end": "12:00",
+    "mode": "heat",
+    "temperature": 20,
+    "preset": ""
+   }
+  ],
+  "expect": "bad_preset"
+ },
+ {
+  "name": "preset not a string",
+  "day": [
+   {
+    "start": "08:00",
+    "end": "12:00",
+    "mode": "heat",
+    "temperature": 20,
+    "preset": 3
+   }
+  ],
+  "expect": "bad_preset"
+ },
+ {
+  "name": "time without leading zero",
+  "day": [
+   {
+    "start": "7:05",
+    "end": "12:00",
+    "mode": "heat",
+    "temperature": 20
+   }
+  ],
+  "expect": "bad_time"
+ },
+ {
+  "name": "hour 25",
+  "day": [
+   {
+    "start": "25:00",
+    "end": "26:00",
+    "mode": "heat",
+    "temperature": 20
+   }
+  ],
+  "expect": "bad_time"
+ },
+ {
+  "name": "minutes 60",
+  "day": [
+   {
+    "start": "08:60",
+    "end": "12:00",
+    "mode": "heat",
+    "temperature": 20
+   }
+  ],
+  "expect": "bad_time"
+ },
+ {
+  "name": "24:01",
+  "day": [
+   {
+    "start": "08:00",
+    "end": "24:01",
+    "mode": "heat",
+    "temperature": 20
+   }
+  ],
+  "expect": "bad_time"
+ },
+ {
+  "name": "time not a time",
+  "day": [
+   {
+    "start": "ab:cd",
+    "end": "12:00",
+    "mode": "heat",
+    "temperature": 20
+   }
+  ],
+  "expect": "bad_time"
+ },
+ {
+  "name": "time as number",
+  "day": [
+   {
+    "start": 480,
+    "end": "12:00",
+    "mode": "off"
+   }
+  ],
+  "expect": "bad_time"
+ },
+ {
+  "name": "missing end",
+  "day": [
+   {
+    "start": "08:00",
+    "mode": "off"
+   }
+  ],
+  "expect": "bad_band"
+ },
+ {
+  "name": "missing mode",
+  "day": [
+   {
+    "start": "08:00",
+    "end": "12:00"
+   }
+  ],
+  "expect": "bad_band"
+ },
+ {
+  "name": "auto not a boolean",
+  "day": [
+   {
+    "start": "08:00",
+    "end": "12:00",
+    "mode": "heat",
+    "temperature": 20,
+    "auto": "yes"
+   }
+  ],
+  "expect": "bad_band"
+ },
+ {
+  "name": "band not an object",
+  "day": [
+   "08:00"
+  ],
+  "expect": "bad_band"
+ },
+ {
+  "name": "day not a list",
+  "day": "08:00",
+  "expect": "bad_band"
+ },
+ {
+  "name": "overlap in the holiday part",
+  "day": [],
+  "expect": "overlap",
+  "holiday": [
+   {
+    "start": "08:00",
+    "end": "12:01",
+    "mode": "heat",
+    "temperature": 20
+   },
+   {
+    "start": "12:00",
+    "end": "18:00",
+    "mode": "heat",
+    "temperature": 20
+   }
+  ]
+ },
+ {
+  "name": "error in another day",
+  "day": [],
+  "expect": "bad_mode",
+  "day3": [
+   {
+    "start": "08:00",
+    "end": "12:00",
+    "mode": "dry",
+    "temperature": 20
+   }
+  ]
+ },
+ {
+  "name": "empty program name",
+  "day": [],
+  "expect": "bad_program",
+  "program_name": ""
+ },
+ {
+  "name": "blank program name",
+  "day": [],
+  "expect": "bad_program",
+  "program_name": "   "
+ },
+ {
+  "name": "six days only",
+  "day": [],
+  "expect": "bad_program",
+  "days": 6
+ },
+ {
+  "name": "eight days",
+  "day": [],
+  "expect": "bad_program",
+  "days": 8
+ }
+]
