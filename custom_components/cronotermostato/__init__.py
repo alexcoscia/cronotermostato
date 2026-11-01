@@ -22,7 +22,11 @@ from .const import (
     PLATFORMS,
 )
 from .engine.calendar import HolidayCalendar
-from .frontend import async_register_static
+from .frontend import (
+    async_register_editor,
+    async_register_static,
+    async_unregister_editor,
+)
 from .manager import Manager
 from .services import async_register_services
 from .store import CronoStore
@@ -89,6 +93,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: CronoConfigEntry) -> boo
     try:
         await manager.async_start()
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+        await async_register_editor(hass, entry)
     except BaseException:
         await manager.async_stop()
         raise
@@ -100,4 +105,5 @@ async def async_unload_entry(hass: HomeAssistant, entry: CronoConfigEntry) -> bo
     if not await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
         return False
     await entry.runtime_data.manager.async_stop()
+    await async_unregister_editor(hass)
     return True

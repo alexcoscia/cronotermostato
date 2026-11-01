@@ -4,11 +4,22 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from homeassistant.components import frontend, panel_custom
 from homeassistant.components.http import StaticPathConfig
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.loader import async_get_integration
 
-from .const import DOMAIN, STATIC_URL_BASE
+from .const import (
+    CONF_ADMIN_ONLY,
+    CONF_SHOW_SIDEBAR,
+    DEFAULT_ADMIN_ONLY,
+    DEFAULT_SHOW_SIDEBAR,
+    DOMAIN,
+    PANEL_ELEMENT,
+    PANEL_URL_PATH,
+    STATIC_URL_BASE,
+)
 
 FRONTEND_DIR = Path(__file__).parent / "frontend"
 ENTRY_FILE = "cronotermostato.js"
@@ -41,3 +52,32 @@ async def async_module_url(hass: HomeAssistant) -> str:
     """Return the versioned URL of the entry module."""
     integration = await async_get_integration(hass, DOMAIN)
     return f"{STATIC_URL_BASE}/{integration.version}/{ENTRY_FILE}"
+
+
+async def async_register_editor(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Register the Lovelace card module and, if wanted, the sidebar panel.
+
+    Call it after the entry is fully set up, and pair it with
+    async_unregister_editor on unload: a panel registered twice raises.
+    """
+    show_sidebar = bool(entry.options.get(CONF_SHOW_SIDEBAR, DEFAULT_SHOW_SIDEBAR))
+    admin_only = bool(entry.options.get(CONF_ADMIN_ONLY, DEFAULT_ADMIN_ONLY))
+    module_url = await async_module_url(hass)
+    frontend.add_extra_js_url(hass, module_url)
+    if not show_sidebar:
+        return
+    await panel_custom.async_register_panel(
+        hass,
+        frontend_url_path=PANEL_URL_PATH,
+        webcomponent_name=PANEL_ELEMENT,
+        sidebar_title="Cronotermostato",
+        sidebar_icon="mdi:calendar-clock",
+        module_url=module_url,
+        require_admin=admin_only,
+    )
+
+
+async def async_unregister_editor(hass: HomeAssistant) -> None:
+    """Remove the panel and the extra module URL; safe if either is missing."""
+    frontend.async_remove_panel(hass, PANEL_URL_PATH, warn_if_unknown=False)
+    frontend.remove_extra_js_url(hass, await async_module_url(hass))
