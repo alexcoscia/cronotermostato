@@ -27,6 +27,14 @@
   "options": {
     "step": {
       "init": {
+        "title": "Cronotermostato options",
+        "description": "Choose what to change.",
+        "menu_options": {
+          "location": "Public holidays",
+          "editor": "Editor"
+        }
+      },
+      "location": {
         "title": "Public holidays",
         "description": "Change the country whose public holidays select the holiday schedule.",
         "data": {
@@ -38,6 +46,18 @@
         "description": "Optional: choose a region of {country} for regional holidays.",
         "data": {
           "subdiv": "Subdivision"
+        }
+      },
+      "editor": {
+        "title": "Editor",
+        "description": "Administrators only hides the sidebar entry from non-administrators; to restrict changes too, see the documentation. The Lovelace card is always available.",
+        "data": {
+          "show_sidebar": "Show in sidebar",
+          "admin_only": "Administrators only"
+        },
+        "data_description": {
+          "show_sidebar": "Add the Cronotermostato editor to the sidebar.",
+          "admin_only": "Hide the sidebar entry from users who are not administrators."
         }
       }
     },

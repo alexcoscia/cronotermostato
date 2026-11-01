@@ -19,8 +19,14 @@ from homeassistant.helpers.selector import (
     SelectSelectorMode,
 )
 
-from . import entry_location
-from .const import CONF_COUNTRY, CONF_SUBDIV, DOMAIN
+from . import entry_editor_options, entry_location
+from .const import (
+    CONF_ADMIN_ONLY,
+    CONF_COUNTRY,
+    CONF_SHOW_SIDEBAR,
+    CONF_SUBDIV,
+    DOMAIN,
+)
 from .engine.calendar import HolidayCalendar, supported_countries
 
 
@@ -139,14 +145,22 @@ class CronoConfigFlow(_LocationStepsMixin, ConfigFlow, domain=DOMAIN):
 
 
 class CronoOptionsFlow(_LocationStepsMixin, OptionsFlowWithReload):
-    """Change country and subdivision; the entry reloads and recomputes."""
+    """Menu: holidays location, or the editor options. The entry reloads on save."""
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Step 1: the country."""
+        """Choose what to change."""
+        return self.async_show_menu(
+            step_id="init", menu_options=["location", "editor"]
+        )
+
+    async def async_step_location(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Country step."""
         country, _ = entry_location(self.config_entry)
-        form = await self._async_country_step("init", user_input, country)
+        form = await self._async_country_step("location", user_input, country)
         if form is not None:
             return form
         if self._countries[self._country]:
@@ -164,9 +178,34 @@ class CronoOptionsFlow(_LocationStepsMixin, OptionsFlowWithReload):
             )
         return await self._async_save(user_input.get(CONF_SUBDIV) or None)
 
+    async def async_step_editor(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Sidebar entry and administrators-only options of the editor."""
+        if user_input is not None:
+            return self.async_create_entry(
+                data={
+                    **self.config_entry.options,
+                    CONF_SHOW_SIDEBAR: bool(user_input[CONF_SHOW_SIDEBAR]),
+                    CONF_ADMIN_ONLY: bool(user_input[CONF_ADMIN_ONLY]),
+                }
+            )
+        show_sidebar, admin_only = entry_editor_options(self.config_entry)
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_SHOW_SIDEBAR, default=show_sidebar): bool,
+                vol.Required(CONF_ADMIN_ONLY, default=admin_only): bool,
+            }
+        )
+        return self.async_show_form(step_id="editor", data_schema=schema)
+
     async def _async_save(self, subdiv: str | None) -> ConfigFlowResult:
         if (error := await self._async_check(subdiv)) is not None:
             return self.async_abort(reason=error)
         return self.async_create_entry(
-            data={CONF_COUNTRY: self._country, CONF_SUBDIV: subdiv}
+            data={
+                **self.config_entry.options,
+                CONF_COUNTRY: self._country,
+                CONF_SUBDIV: subdiv,
+            }
         )

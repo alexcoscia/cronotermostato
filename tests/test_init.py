@@ -118,6 +118,9 @@ async def test_options_change_recomputes_rooms(hass, freezer):
     calls.clear()
     result = await hass.config_entries.options.async_init(entry.entry_id)
     result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "location"}
+    )
+    result = await hass.config_entries.options.async_configure(
         result["flow_id"], {CONF_COUNTRY: "US"}
     )
     await hass.config_entries.options.async_configure(result["flow_id"], {})
@@ -147,6 +150,9 @@ async def test_options_subdiv_changes_calendar(hass, freezer):
     assert entry.runtime_data.manager.controllers[ROOM].state.holiday is False
 
     result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "location"}
+    )
     result = await hass.config_entries.options.async_configure(
         result["flow_id"], {CONF_COUNTRY: "IT"}
     )

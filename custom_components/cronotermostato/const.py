@@ -13,6 +13,10 @@ SIGNAL_ROOM_UPDATED = "cronotermostato_room_updated_{}"
 
 CONF_COUNTRY = "country"
 CONF_SUBDIV = "subdiv"
+CONF_SHOW_SIDEBAR = "show_sidebar"
+CONF_ADMIN_ONLY = "admin_only"
+DEFAULT_SHOW_SIDEBAR = True
+DEFAULT_ADMIN_ONLY = True
 
 SIGNAL_ROOMS_CHANGED = "cronotermostato_rooms_changed"
 """Sent by the Manager after ``async_sync`` created or stopped a controller."""

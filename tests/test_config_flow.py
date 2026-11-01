@@ -1,11 +1,20 @@
 """Tests for the config flow and the options flow."""
 
+from unittest.mock import patch
+
 import pytest
 from homeassistant import config_entries
 from homeassistant.data_entry_flow import FlowResultType, InvalidData
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.cronotermostato.const import CONF_COUNTRY, CONF_SUBDIV, DOMAIN
+from custom_components.cronotermostato import entry_editor_options, entry_location
+from custom_components.cronotermostato.const import (
+    CONF_ADMIN_ONLY,
+    CONF_COUNTRY,
+    CONF_SHOW_SIDEBAR,
+    CONF_SUBDIV,
+    DOMAIN,
+)
 
 
 async def _start(hass):
@@ -82,7 +91,13 @@ async def test_options_change_country_and_subdiv(hass):
     await hass.async_block_till_done()
 
     result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert result["type"] is FlowResultType.MENU
     assert result["step_id"] == "init"
+    assert result["menu_options"] == ["location", "editor"]
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "location"}
+    )
+    assert result["step_id"] == "location"
     result = await hass.config_entries.options.async_configure(
         result["flow_id"], {CONF_COUNTRY: "US"}
     )
@@ -95,4 +110,110 @@ async def test_options_change_country_and_subdiv(hass):
     assert entry.options == {CONF_COUNTRY: "US", CONF_SUBDIV: "CA"}
     assert entry.runtime_data.calendar.country == "US"
     assert entry.runtime_data.calendar.subdiv == "CA"
+    await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def _setup_entry(hass, options=None):
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={CONF_COUNTRY: "IT", CONF_SUBDIV: None},
+        options=options or {},
+        unique_id=DOMAIN,
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    return entry
+
+
+async def _open_step(hass, entry, step):
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    return await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": step}
+    )
+
+
+async def test_old_entry_uses_editor_defaults(hass):
+    entry = MockConfigEntry(domain=DOMAIN, data={CONF_COUNTRY: "IT", CONF_SUBDIV: None})
+    assert entry_editor_options(entry) == (True, True)
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={CONF_COUNTRY: "IT"},
+        options={CONF_COUNTRY: "US", CONF_SUBDIV: "CA"},
+    )
+    assert entry_editor_options(entry) == (True, True)
+    assert entry_location(entry) == ("US", "CA")
+
+
+async def test_editor_options_saved_and_reload_once(hass):
+    entry = await _setup_entry(hass, {CONF_COUNTRY: "US", CONF_SUBDIV: "CA"})
+    result = await _open_step(hass, entry, "editor")
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "editor"
+    with patch.object(
+        hass.config_entries, "async_reload", wraps=hass.config_entries.async_reload
+    ) as reload:
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {CONF_SHOW_SIDEBAR: False, CONF_ADMIN_ONLY: False}
+        )
+        await hass.async_block_till_done()
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert reload.call_count == 1
+    assert entry.options == {
+        CONF_COUNTRY: "US",
+        CONF_SUBDIV: "CA",
+        CONF_SHOW_SIDEBAR: False,
+        CONF_ADMIN_ONLY: False,
+    }
+    assert entry_editor_options(entry) == (False, False)
+    assert entry_location(entry) == ("US", "CA")
+    await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_editor_form_defaults_follow_entry(hass):
+    entry = await _setup_entry(hass, {CONF_SHOW_SIDEBAR: False})
+    result = await _open_step(hass, entry, "editor")
+    defaults = {str(k): k.default() for k in result["data_schema"].schema}
+    assert defaults == {CONF_SHOW_SIDEBAR: False, CONF_ADMIN_ONLY: True}
+    await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_location_keeps_editor_options(hass):
+    entry = await _setup_entry(
+        hass, {CONF_SHOW_SIDEBAR: False, CONF_ADMIN_ONLY: False}
+    )
+    result = await _open_step(hass, entry, "location")
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {CONF_COUNTRY: "US"}
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {CONF_SUBDIV: "CA"}
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    await hass.async_block_till_done()
+    assert entry.options == {
+        CONF_COUNTRY: "US",
+        CONF_SUBDIV: "CA",
+        CONF_SHOW_SIDEBAR: False,
+        CONF_ADMIN_ONLY: False,
+    }
+    await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_location_without_subdivisions_keeps_editor_options(hass):
+    from custom_components.cronotermostato.engine.calendar import supported_countries
+
+    plain = next(c for c, v in supported_countries().items() if not v and c != "XK")
+    entry = await _setup_entry(hass, {CONF_ADMIN_ONLY: False})
+    result = await _open_step(hass, entry, "location")
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {CONF_COUNTRY: plain}
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    await hass.async_block_till_done()
+    assert entry.options == {
+        CONF_COUNTRY: plain,
+        CONF_SUBDIV: None,
+        CONF_ADMIN_ONLY: False,
+    }
     await hass.config_entries.async_unload(entry.entry_id)

@@ -27,6 +27,14 @@
   "options": {
     "step": {
       "init": {
+        "title": "Opzioni di Cronotermostato",
+        "description": "Scegli cosa modificare.",
+        "menu_options": {
+          "location": "Festività",
+          "editor": "Editor"
+        }
+      },
+      "location": {
         "title": "Festività",
         "description": "Cambia la nazione le cui festività selezionano il programma dei giorni festivi.",
         "data": {
@@ -38,6 +46,18 @@
         "description": "Facoltativo: scegli una regione di {country} per le festività regionali.",
         "data": {
           "subdiv": "Regione / provincia"
+        }
+      },
+      "editor": {
+        "title": "Editor",
+        "description": "Solo amministratori: nasconde la voce ai non amministratori; per limitare anche le modifiche vedi la documentazione. La scheda Lovelace è sempre disponibile.",
+        "data": {
+          "show_sidebar": "Voce nella barra laterale",
+          "admin_only": "Solo amministratori"
+        },
+        "data_description": {
+          "show_sidebar": "Aggiungi l'editor di Cronotermostato alla barra laterale.",
+          "admin_only": "Nasconde la voce della barra laterale agli utenti che non sono amministratori."
         }
       }
     },

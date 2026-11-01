@@ -11,7 +11,16 @@ from homeassistant.exceptions import ConfigEntryError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 
-from .const import CONF_COUNTRY, CONF_SUBDIV, DOMAIN, PLATFORMS
+from .const import (
+    CONF_ADMIN_ONLY,
+    CONF_COUNTRY,
+    CONF_SHOW_SIDEBAR,
+    CONF_SUBDIV,
+    DEFAULT_ADMIN_ONLY,
+    DEFAULT_SHOW_SIDEBAR,
+    DOMAIN,
+    PLATFORMS,
+)
 from .engine.calendar import HolidayCalendar
 from .frontend import async_register_static
 from .manager import Manager
@@ -40,6 +49,14 @@ def entry_location(entry: ConfigEntry) -> tuple[str, str | None]:
     """Return (country, subdivision); the options win over the original data."""
     source = entry.options if entry.options.get(CONF_COUNTRY) else entry.data
     return source[CONF_COUNTRY], source.get(CONF_SUBDIV) or None
+
+
+def entry_editor_options(entry: ConfigEntry) -> tuple[bool, bool]:
+    """Return (show_sidebar, admin_only); entries without the keys use the defaults."""
+    return (
+        bool(entry.options.get(CONF_SHOW_SIDEBAR, DEFAULT_SHOW_SIDEBAR)),
+        bool(entry.options.get(CONF_ADMIN_ONLY, DEFAULT_ADMIN_ONLY)),
+    )
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
