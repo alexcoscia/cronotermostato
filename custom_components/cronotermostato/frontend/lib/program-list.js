@@ -83,6 +83,17 @@ export function reconcileSelection(selection, programs) {
 }
 
 /**
+ * Selection right after deleting `removedId`: the state still read may list it,
+ * so reconcile on the programs without it (the neighbour, or `none` if it was
+ * the last one), never `removed`. `orderedIds` is the list order before deleting.
+ */
+export function reconcileAfterDelete(orderedIds, programs, removedId) {
+  const remaining = programs.filter((program) => idOf(program) !== removedId);
+  const next = neighbourId(orderedIds, removedId, remaining.map(idOf));
+  return reconcileSelection(next === null ? noSelection() : selectionOf(next), remaining);
+}
+
+/**
  * The program to select when `removedId` goes away: the next one in the old
  * order that still exists, else the previous one, else null.
  */
@@ -141,12 +152,24 @@ export function uniqueName(base, names) {
   for (let n = 2; ; n += 1) if (!taken.has(`${base} ${n}`)) return `${base} ${n}`;
 }
 
+/** True if another program (not `exceptId`) already has this name, ignoring case and extra spaces. */
+export function sameNameExists(name, programs, exceptId = null) {
+  const norm = (text) => String(text ?? "").trim().replace(/\s+/g, " ").toLocaleLowerCase();
+  const wanted = norm(name);
+  return wanted !== "" && programs.some((program) => idOf(program) !== exceptId && norm(program.name) === wanted);
+}
+
 // ---- Deletion -------------------------------------------------------------------
 
 /** Why a program cannot be deleted: {count, roomIds}, or null if it can. */
 export function deleteBlock(programId, rooms) {
   const roomIds = rooms.filter((room) => room.program_id === programId).map((room) => room.climate_entity_id);
   return roomIds.length > 0 ? { count: roomIds.length, roomIds } : null;
+}
+
+/** What is still blocking after taking rooms off: the rooms of the program that did not come off, or null. */
+export function blockAfterUnassign(programId, rooms, { done }) {
+  return deleteBlock(programId, rooms.filter((room) => !done.includes(room.climate_entity_id)));
 }
 
 // ---- Actions (they call the API; errors are EditorError and reach the caller) ----

@@ -48,6 +48,7 @@ export default {
   "program.delete_title": "Delete the program",
   "program.in_use_title": "The program cannot be deleted",
   "program.name_empty": "Enter a name.",
+  "program.name_duplicate": "A program called \"{name}\" already exists. You can still save, but they will be hard to tell apart.",
   "program.removed_pick": "Choose another program",
   "program.unassign_failed_one": "Could not remove 1 room from the program.",
   "program.unassign_failed_other": "Could not remove {count} rooms from the program.",

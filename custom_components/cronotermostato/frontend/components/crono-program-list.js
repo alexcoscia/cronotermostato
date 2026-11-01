@@ -14,6 +14,8 @@ import {
   canEdit,
   cleanName,
   uniqueName,
+  sameNameExists,
+  blockAfterUnassign,
   deleteBlock,
   createNewProgram,
   duplicateProgram,
@@ -77,9 +79,9 @@ export function renderProgramList(view) {
       : nothing}
     ${status === "ready" || status === "empty"
       ? html`<div class="tools" role="group" aria-label=${t("program.actions")}>
-          <button class="btn" type="button" ?disabled=${actionsOff} @click=${on.rename}>${iconEdit()}<span>${t("common.rename")}</span></button>
-          <button class="btn" type="button" ?disabled=${actionsOff} @click=${on.duplicate}>${iconCopy()}<span>${t("common.duplicate")}</span></button>
-          <button class="btn danger" type="button" ?disabled=${actionsOff} @click=${on.remove}>${iconTrash()}<span>${t("common.delete")}</span></button>
+          <button class="btn" type="button" ?disabled=${actionsOff} aria-label=${t("common.rename")} title=${t("common.rename")} @click=${on.rename}>${iconEdit()}<span class="lbl">${t("common.rename")}</span></button>
+          <button class="btn" type="button" ?disabled=${actionsOff} aria-label=${t("common.duplicate")} title=${t("common.duplicate")} @click=${on.duplicate}>${iconCopy()}<span class="lbl">${t("common.duplicate")}</span></button>
+          <button class="btn danger" type="button" ?disabled=${actionsOff} aria-label=${t("common.delete")} title=${t("common.delete")} @click=${on.remove}>${iconTrash()}<span class="lbl">${t("common.delete")}</span></button>
         </div>`
       : nothing}
     ${!editable ? html`<p class="msg">${t("editor.admin_only")}</p>` : nothing}
@@ -102,6 +104,7 @@ export class CronoProgramList extends LitElement {
         flex-direction: column;
         gap: 12px;
         min-width: 0;
+        container-type: inline-size;
       }
       .head {
         display: flex;
@@ -161,9 +164,26 @@ export class CronoProgramList extends LitElement {
         color: var(--crono-muted);
       }
       .tools {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
+        display: grid;
+        grid-template-columns: repeat(3, minmax(44px, 1fr));
+        gap: 6px;
+      }
+      .tools .btn {
+        padding: 0 4px;
+        gap: 5px;
+        min-width: 0;
+        font-size: 13px;
+      }
+      /* very narrow list (small phone): icons only; the text stays as aria-label and title */
+      @container (max-width: 250px) {
+        .tools .lbl {
+          position: absolute;
+          width: 1px;
+          height: 1px;
+          overflow: hidden;
+          clip: rect(0 0 0 0);
+          white-space: nowrap;
+        }
       }
       .msg button {
         margin-inline-start: auto;
@@ -187,6 +207,11 @@ export class CronoProgramList extends LitElement {
         border-radius: 8px;
         background: var(--crono-surface);
         color: var(--crono-text);
+      }
+      .fw {
+        color: var(--crono-warn);
+        font-weight: 600;
+        font-size: 12.5px;
       }
       .fe {
         color: var(--crono-error);
@@ -222,7 +247,8 @@ export class CronoProgramList extends LitElement {
   };
 
   _open(kind, extra = {}) {
-    this._dialog = { kind, ...extra };
+    const warning = extra.value !== undefined ? this._nameWarning(extra.value, kind === "rename" ? extra.program : null) : null;
+    this._dialog = { kind, ...extra, warning };
   }
 
   _names() {
@@ -260,6 +286,19 @@ export class CronoProgramList extends LitElement {
     }
   }
 
+  /** Warn (not an error) when another program already has this name. */
+  _nameWarning(value, program) {
+    const programId = program ? programKey(program) : null;
+    return sameNameExists(value, this.state.programs, programId) ? this._t("program.name_duplicate", { name: cleanName(value) }) : null;
+  }
+
+  _onNameInput = (event) => {
+    const d = this._dialog;
+    if (!d || d.busy) return;
+    const value = event.target.value;
+    this._dialog = { ...d, value, warning: d.kind === "rename" || d.kind === "new" || d.kind === "duplicate" ? this._nameWarning(value, d.kind === "rename" ? d.program : null) : null };
+  };
+
   _submitName = (event) => {
     event.preventDefault();
     const dialog = this._dialog;
@@ -288,9 +327,12 @@ export class CronoProgramList extends LitElement {
   _removeFromRooms = () => {
     const { block } = this._dialog;
     this._run(async () => {
-      const { failed } = await unassignRooms(this.hass, block.roomIds);
+      const result = await unassignRooms(this.hass, block.roomIds);
+      const { failed } = result;
       this._emit("crono-refresh");
       if (failed.length > 0) {
+        // the retry must only concern the rooms still on the program
+        this._dialog = { ...this._dialog, block: blockAfterUnassign(programKey(this._dialog.program), this.state.rooms, result) ?? { count: failed.length, roomIds: failed.map((f) => f.id) } };
         const err = new Error(this._t(failed.length === 1 ? "program.unassign_failed_one" : "program.unassign_failed_other", { count: failed.length }));
         err.code = "unassign_failed";
         throw err;
@@ -321,45 +363,60 @@ export class CronoProgramList extends LitElement {
           retry: () => this._emit("crono-refresh"),
         },
       })}
-      ${this._renderDialog(t, plural)}
+      ${this._renderDialog(t)}
     `;
   }
 
-  _renderDialog(t, plural) {
+  // ONE <crono-dialog> template, always rendered: only `open`, the heading and the
+  // content change. Another template for each state would destroy the element while
+  // the modal <dialog> is open and the browser could not return the focus.
+  _renderDialog(t) {
     const d = this._dialog;
-    if (!d) return html`<crono-dialog></crono-dialog>`;
+    const heading = !d
+      ? ""
+      : d.kind === "in_use"
+        ? t("program.in_use_title")
+        : d.kind === "delete"
+          ? t("program.delete_title")
+          : t(`program.${d.kind}_title`);
+    return html`<crono-dialog ?open=${d !== null} ?alert=${d?.kind === "in_use" || d?.kind === "delete"} .heading=${heading} @crono-close=${this._close}>
+      ${d ? this._dialogContent(t, d) : nothing}
+    </crono-dialog>`;
+  }
+
+  _dialogContent(t, d) {
     const name = d.program ? String(d.program.name) : "";
     const error = d.error ? html`<p class="msg error" role="alert">${iconWarn()}<span>${d.error}</span></p>` : nothing;
     if (d.kind === "new" || d.kind === "rename" || d.kind === "duplicate") {
-      const heading = t(`program.${d.kind}_title`);
-      return html`<crono-dialog open .heading=${heading} @crono-close=${this._close}>
+      const describedBy = [d.nameError ? "name-err" : "", d.warning ? "name-warn" : ""].filter(Boolean).join(" ");
+      return html`
         <form id="name-form" @submit=${this._submitName}>
           <label>
             ${t("common.name")}
-            <input type="text" name="name" .value=${d.value} required autocomplete="off" autofocus aria-invalid=${d.nameError ? "true" : "false"} aria-describedby=${d.nameError ? "name-err" : nothing} />
+            <input type="text" name="name" .value=${d.value} required autocomplete="off" autofocus aria-invalid=${d.nameError ? "true" : "false"} aria-describedby=${describedBy || nothing} @input=${this._onNameInput} />
           </label>
           ${d.nameError ? html`<p class="fe" id="name-err" role="alert">${d.nameError}</p>` : nothing}
+          ${d.warning ? html`<p class="fw" id="name-warn" role="status">${d.warning}</p>` : nothing}
         </form>
         ${error}
         <button slot="actions" class="btn" type="button" ?disabled=${d.busy} @click=${this._close}>${t("common.cancel")}</button>
         <button slot="actions" class="btn primary" type="submit" form="name-form" ?disabled=${d.busy}>${t("common.save")}</button>
-      </crono-dialog>`;
+      `;
     }
     if (d.kind === "in_use") {
-      return html`<crono-dialog open alert .heading=${t("program.in_use_title")} @crono-close=${this._close}>
+      return html`
         <p>${tn(this.hass, "program.in_use", d.block.count)}</p>
         ${error}
         <button slot="actions" class="btn" type="button" ?disabled=${d.busy} @click=${this._close}>${t("common.close")}</button>
-        <button slot="actions" class="btn primary" type="button" ?disabled=${d.busy} @click=${this._removeFromRooms}>${t("program.remove_from_rooms")}</button>
-      </crono-dialog>`;
+        <button slot="actions" class="btn primary" type="button" ?disabled=${d.busy || d.block.roomIds.length === 0} @click=${this._removeFromRooms}>${t("program.remove_from_rooms")}</button>
+      `;
     }
-    // delete
-    return html`<crono-dialog open alert .heading=${t("program.delete_title")} @crono-close=${this._close}>
+    return html`
       <p>${t("program.delete_confirm", { name })}</p>
       ${error}
       <button slot="actions" class="btn" type="button" ?disabled=${d.busy} @click=${this._close}>${t("common.cancel")}</button>
       <button slot="actions" class="btn danger" type="button" ?disabled=${d.busy} @click=${this._confirmDelete}>${t("common.delete")}</button>
-    </crono-dialog>`;
+    `;
   }
 }
 

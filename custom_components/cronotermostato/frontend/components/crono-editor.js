@@ -7,7 +7,7 @@ import { tokens, base } from "../styles.js";
 import { iconWarn } from "../icons.js";
 import { createStore } from "../lib/store.js";
 import { createT, tn } from "../lib/i18n.js";
-import { sortPrograms, reconcileSelection, neighbourId, selectionOf, pendingSelection, loadStoredSelection, storeSelection } from "../lib/program-list.js";
+import { sortPrograms, reconcileSelection, reconcileAfterDelete, neighbourId, selectionOf, pendingSelection, loadStoredSelection, storeSelection } from "../lib/program-list.js";
 import "./crono-program-list.js";
 
 const PENDING_MS = 10000; // a just-created program that never shows up stops being waited for
@@ -29,6 +29,7 @@ export class CronoEditor extends LitElement {
       :host {
         display: block;
         color: var(--crono-text);
+        container-type: inline-size; /* the layout follows the width of the panel, not of the window */
       }
       .layout {
         display: grid;
@@ -38,7 +39,7 @@ export class CronoEditor extends LitElement {
         max-width: 1100px;
         margin: 0 auto;
       }
-      @media (min-width: 700px) {
+      @container (min-width: 700px) {
         .layout {
           grid-template-columns: minmax(240px, 1fr) minmax(0, 2.2fr);
         }
@@ -108,6 +109,7 @@ export class CronoEditor extends LitElement {
     this._state = this._store.getState();
     this._selection = selectionOf(loadStoredSelection());
     this._status = "none";
+    this._deletedId = null; // deleted here, maybe still listed by a state read before the refresh
     this._orderedIds = []; // ids in list order at the last successful reconciliation
     this._off = null;
     this._pendingTimer = null;
@@ -141,7 +143,9 @@ export class CronoEditor extends LitElement {
     this._store.start(this.hass);
   }
 
-  _onState(state) {
+  _onState(read) {
+    if (this._deletedId !== null && !read.programs.some((p) => idOf(p) === this._deletedId)) this._deletedId = null;
+    const state = this._deletedId === null ? read : { ...read, programs: read.programs.filter((p) => idOf(p) !== this._deletedId) };
     const { selection, status } = reconcileSelection(this._selection, state.programs);
     if (status === "ok") {
       this._orderedIds = sortPrograms(state.programs).map(idOf);
@@ -178,8 +182,9 @@ export class CronoEditor extends LitElement {
 
   _onDeleted = (event) => {
     const { id } = event.detail;
-    const remaining = this._orderedIds.filter((x) => x !== id);
-    this._select(neighbourId(this._orderedIds, id, remaining));
+    this._deletedId = id;
+    const { selection } = reconcileAfterDelete(this._orderedIds, this._store.getState().programs, id);
+    this._select(selection.id);
     this._store.refresh();
   };
 

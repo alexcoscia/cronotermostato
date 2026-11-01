@@ -8,7 +8,9 @@ import {
   sortPrograms, summarizePrograms, listStatus, reconcileSelection, selectionOf, pendingSelection, noSelection, neighbourId,
   loadStoredSelection, storeSelection, SELECTION_KEY, cleanName, uniqueName, deleteBlock, createNewProgram, duplicateProgram,
   renameProgram, removeProgram, unassignRooms, errorMessage, canEdit,
+  reconcileAfterDelete, blockAfterUnassign, sameNameExists,
 } from "../../custom_components/cronotermostato/frontend/lib/program-list.js";
+import { deepActiveElement, restoreFocus } from "../../custom_components/cronotermostato/frontend/lib/focus.js";
 const { renderProgramList } = await import("../../custom_components/cronotermostato/frontend/components/crono-program-list.js");
 
 const week = () => Array.from({ length: 7 }, () => []);
@@ -312,4 +314,56 @@ test("render: actions off without a selection or without permission", () => {
   assert.deepEqual(flags(view([sum("a", "A")], { selectedId: null })), [false, true, true, true]);
   assert.deepEqual(flags(view([sum("a", "A")], { canEdit: false })), [true, true, true, true]);
   assert.ok(strings(view([sum("a", "A")], { canEdit: false })).values.includes("Only administrators can edit programs."));
+});
+
+// ---- review fixes ----------------------------------------------------------------------
+
+test("reconcileAfterDelete: deleting the last program -> none, never removed", () => {
+  const r = reconcileAfterDelete(["a"], [prog("a", "A")], "a");
+  assert.equal(r.status, "none");
+  assert.equal(r.selection.id, null);
+});
+
+test("reconcileAfterDelete: one among many -> the neighbour is selected", () => {
+  const programs = [prog("a", "A"), prog("b", "B"), prog("c", "C")];
+  const mid = reconcileAfterDelete(["a", "b", "c"], programs, "b");
+  assert.deepEqual([mid.status, mid.selection.id], ["ok", "c"]);
+  const last = reconcileAfterDelete(["a", "b", "c"], programs, "c");
+  assert.deepEqual([last.status, last.selection.id], ["ok", "b"]);
+  // a later read that no longer has it stays ok
+  assert.equal(reconcileSelection(last.selection, programs.slice(0, 2)).status, "ok");
+});
+
+test("blockAfterUnassign: only the rooms that are still on the program", () => {
+  const rooms = [room("climate.a", "p"), room("climate.b", "p"), room("climate.c", "p"), room("climate.x", "q")];
+  assert.deepEqual(blockAfterUnassign("p", rooms, { done: ["climate.a", "climate.c"], failed: [{ id: "climate.b" }] }), { count: 1, roomIds: ["climate.b"] });
+  assert.equal(blockAfterUnassign("p", rooms, { done: ["climate.a", "climate.b", "climate.c"], failed: [] }), null);
+});
+
+test("sameNameExists: ignores case and spaces, and the program itself", () => {
+  const programs = [prog("a", "Giorno  Feriale"), prog("b", "Estate")];
+  assert.equal(sameNameExists("  giorno feriale ", programs), true);
+  assert.equal(sameNameExists("Inverno", programs), false);
+  assert.equal(sameNameExists("estate", programs, "b"), false);
+  assert.equal(sameNameExists("   ", programs), false);
+});
+
+test("i18n: the duplicate-name warning exists in it and en with the same placeholder", () => {
+  for (const language of ["it", "en"]) {
+    const text = createT({ language })("program.name_duplicate", { name: "X1" });
+    assert.notEqual(text, "program.name_duplicate");
+    assert.ok(text.includes("X1"), language);
+  }
+});
+
+test("focus: deepActiveElement goes through shadow roots; restoreFocus only if still connected", () => {
+  const inner = { isConnected: true, shadowRoot: null };
+  const host = { shadowRoot: { activeElement: inner } };
+  assert.equal(deepActiveElement({ activeElement: host }), inner);
+  assert.equal(deepActiveElement({ activeElement: null }), null);
+  let focused = 0;
+  restoreFocus({ isConnected: true, focus: () => { focused += 1; } });
+  restoreFocus({ isConnected: false, focus: () => { focused += 10; } });
+  restoreFocus(null);
+  assert.equal(focused, 1);
 });

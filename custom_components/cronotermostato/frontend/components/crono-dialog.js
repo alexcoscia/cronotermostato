@@ -1,11 +1,21 @@
 // Accessible modal dialog on the native <dialog> element: showModal() gives the
-// focus trap, Esc, the inert page behind and the return of the focus to the
-// element that opened it. The parent owns the `open` state: Esc and the close
-// button only fire `crono-close`. Content comes in through slots (the parent
-// renders it with normal Lit bindings, so it is always text).
+// focus trap, Esc and the inert page behind. The parent owns the `open` state:
+// Esc and the close button only fire `crono-close`. Content comes in through
+// slots (the parent renders it with normal Lit bindings, so it is always text).
+//
+// Focus: the browser gives the focus back to the opener on close() only if this
+// element stays in the page, so the parent keeps ONE <crono-dialog ?open=...>
+// always rendered (never one template for closed and another for open). As a
+// safeguard the element also remembers the focused element (through shadow
+// roots) when it opens and focuses it again on close, if it is still connected.
+//
+// A click on the backdrop does NOT close the dialog, on purpose: for delete and
+// "in use" it is too easy to dismiss by mistake, and for new/rename it would
+// lose what the user typed. Esc, Cancel and Close are the ways out.
 
 import { LitElement, html, css } from "../lit.js";
 import { base } from "../styles.js";
+import { deepActiveElement, restoreFocus } from "../lib/focus.js";
 
 export class CronoDialog extends LitElement {
   static properties = {
@@ -71,8 +81,14 @@ export class CronoDialog extends LitElement {
     if (!changed.has("open")) return;
     const dialog = this._dialog;
     if (!dialog) return;
-    if (this.open && !dialog.open) dialog.showModal();
-    else if (!this.open && dialog.open) dialog.close();
+    if (this.open && !dialog.open) {
+      this._opener = deepActiveElement();
+      dialog.showModal();
+    } else if (!this.open && dialog.open) {
+      dialog.close();
+      restoreFocus(this._opener);
+      this._opener = null;
+    }
   }
 
   _onCancel(event) {

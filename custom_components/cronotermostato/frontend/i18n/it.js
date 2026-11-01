@@ -48,6 +48,7 @@ export default {
   "program.delete_title": "Elimina il programma",
   "program.in_use_title": "Il programma non si può eliminare",
   "program.name_empty": "Scrivi un nome.",
+  "program.name_duplicate": "Esiste già un programma chiamato \"{name}\". Puoi salvare lo stesso, ma sarà difficile distinguerli.",
   "program.removed_pick": "Scegli un altro programma",
   "program.unassign_failed_one": "Non è stato possibile togliere 1 stanza dal programma.",
   "program.unassign_failed_other": "Non è stato possibile togliere {count} stanze dal programma.",
