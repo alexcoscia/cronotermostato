@@ -25,6 +25,10 @@ Design decisions:
 
 Known limits:
 
+* A heat/cool setting outside the ``min_temp``/``max_temp`` of the climate
+  (defaults 5-35 when it declares none) is not sent at all, neither mode nor
+  temperature: status ``out_of_range``, one warning per change, retried at the
+  next boundary or explicit refresh. ``off`` has no temperature.
 * After ``error`` the next attempt happens only at the next slot boundary, when
   the thermostat comes back, or on an explicit refresh. There is no periodic
   retry.
@@ -40,11 +44,12 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 import logging
+import math
 from typing import Any, Literal
 
 from homeassistant.const import ATTR_ENTITY_ID, STATE_UNAVAILABLE, STATE_UNKNOWN
-from homeassistant.core import Event, HomeAssistant, callback
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.core import Event, HomeAssistant, State, callback
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import (
     EventStateChangedData,
@@ -53,7 +58,7 @@ from homeassistant.helpers.event import (
 )
 from homeassistant.util import dt as dt_util
 
-from .const import SIGNAL_ROOM_UPDATED
+from .const import DEFAULT_MAX_TEMP, DEFAULT_MIN_TEMP, DOMAIN, SIGNAL_ROOM_UPDATED
 from .engine.calendar import HolidayCalendar
 from .engine.models import Mode, Program, ProgramError
 from .engine.timeline import Slot, Timeline
@@ -62,8 +67,36 @@ from .store import CronoStore, Override
 _LOGGER = logging.getLogger(__name__)
 
 RoomStatus = Literal[
-    "ok", "paused", "unassigned", "unavailable", "unsupported_mode", "missing", "error"
+    "ok",
+    "paused",
+    "unassigned",
+    "unavailable",
+    "unsupported_mode",
+    "out_of_range",
+    "missing",
+    "error",
 ]
+
+
+def _finite(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+def temperature_limits(state: State | None) -> tuple[float, float]:
+    """(min, max) of a climate: its ``min_temp``/``max_temp`` if both are
+    finite numbers with min < max, otherwise the defaults."""
+    if state is not None:
+        low = _finite(state.attributes.get("min_temp"))
+        high = _finite(state.attributes.get("max_temp"))
+        if low is not None and high is not None and low < high:
+            return low, high
+    return DEFAULT_MIN_TEMP, DEFAULT_MAX_TEMP
 
 
 @dataclass
@@ -106,6 +139,7 @@ class RoomController:
         self._last_applied: tuple[Mode, float | None] | None = None
         self._signature: Any = None
         self._forced_evals = 0
+        self._range_warned: tuple[Mode, float | None] | None = None
 
     # -- lifecycle -------------------------------------------------------
 
@@ -141,6 +175,19 @@ class RoomController:
         """Force a setting until the end of the current slot."""
         if self._climate_id not in self._store.assignments:
             raise ProgramError(f"Room not assigned: {self._climate_id!r}")
+        if mode != "off" and temperature is not None:
+            low, high = temperature_limits(self._hass.states.get(self._climate_id))
+            if not low <= temperature <= high:
+                raise ServiceValidationError(
+                    translation_domain=DOMAIN,
+                    translation_key="temperature_out_of_range",
+                    translation_placeholders={
+                        "min": str(low),
+                        "max": str(high),
+                        "temperature": str(temperature),
+                        "entity_id": self._climate_id,
+                    },
+                )
         timeline = self._get_timeline(rebuild=False)
         now = dt_util.utcnow()
         slot = timeline.slot_at(now.astimezone(dt_util.get_default_time_zone()))
@@ -317,7 +364,7 @@ class RoomController:
             if startup and override is not None:
                 self._last_applied = key  # already held by the thermostat
             elif force or key != self._last_applied:
-                status = await self._apply(cstate.attributes, mode, temperature)
+                status = await self._apply(cstate, mode, temperature)
                 if self._stopped:
                     return
                 self._last_applied = key if status == "ok" else None
@@ -335,11 +382,23 @@ class RoomController:
         )
 
     async def _apply(
-        self, attributes: Any, mode: Mode, temperature: float | None
+        self, cstate: State, mode: Mode, temperature: float | None
     ) -> RoomStatus:
-        if mode not in (attributes.get("hvac_modes") or []):
+        if mode not in (cstate.attributes.get("hvac_modes") or []):
             _LOGGER.warning("%s does not support mode %s", self._climate_id, mode)
             return "unsupported_mode"
+        if temperature is not None:
+            low, high = temperature_limits(cstate)
+            if not low <= temperature <= high:
+                if self._range_warned != (mode, temperature):
+                    self._range_warned = (mode, temperature)
+                    _LOGGER.warning(
+                        "%s: %s °C is outside the thermostat limits %s-%s °C, "
+                        "nothing sent",
+                        self._climate_id, temperature, low, high,
+                    )
+                return "out_of_range"
+        self._range_warned = None
         if self._stopped:
             return "error"
         try:

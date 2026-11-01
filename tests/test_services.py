@@ -312,3 +312,51 @@ async def test_program_name_max_100(env):
             "create_program", name="x" * 101, week=WEEK, holiday=HOLIDAY
         )
     assert len(env.store.programs) == 1
+
+
+async def test_set_manual_out_of_climate_range(env):
+    env.hass.states.async_set(
+        ROOM, "heat", {"hvac_modes": ["heat", "off"], "min_temp": 15, "max_temp": 25}
+    )
+    program_id = await env.create()
+    await env.call("assign", program_id=program_id, climate_entity_id=ROOM)
+    env.calls.clear()
+    for temperature in (30, 14.5):
+        with pytest.raises(ServiceValidationError) as err:
+            await env.call(
+                "set_manual", climate_entity_id=ROOM, mode="heat",
+                temperature=temperature,
+            )
+        assert err.value.translation_key == "temperature_out_of_range"
+        assert err.value.translation_placeholders["entity_id"] == ROOM
+        assert err.value.translation_placeholders["min"] == "15.0"
+        assert err.value.translation_placeholders["max"] == "25.0"
+    assert env.store.overrides == {}
+    assert env.calls == []
+    await env.call("set_manual", climate_entity_id=ROOM, mode="heat", temperature=25)
+    assert env.calls[-1] == (ROOM, "set_temperature", 25.0)
+
+
+async def test_set_manual_off_never_out_of_range(env):
+    env.hass.states.async_set(
+        ROOM, "heat", {"hvac_modes": ["heat", "off"], "min_temp": 15, "max_temp": 25}
+    )
+    program_id = await env.create()
+    await env.call("assign", program_id=program_id, climate_entity_id=ROOM)
+    await env.call("set_manual", climate_entity_id=ROOM, mode="off", temperature=99)
+    assert env.store.overrides[ROOM].mode == "off"
+
+
+async def test_set_manual_defaults_when_climate_missing(env):
+    program_id = await env.create()
+    await env.call("assign", program_id=program_id, climate_entity_id=ROOM)
+    env.hass.states.async_remove(ROOM)
+    with pytest.raises(ServiceValidationError) as err:
+        await env.call(
+            "set_manual", climate_entity_id=ROOM, mode="heat", temperature=36
+        )
+    assert err.value.translation_key == "temperature_out_of_range"
+    assert err.value.translation_placeholders["min"] == "5.0"
+    assert err.value.translation_placeholders["max"] == "35.0"
+    await env.call("set_manual", climate_entity_id=ROOM, mode="heat", temperature=35)
+    assert env.store.overrides[ROOM].temperature == 35.0

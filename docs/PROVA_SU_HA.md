@@ -1,11 +1,11 @@
 # Prova su Home Assistant (verifiche manuali)
 
-Prima di iniziare: **Alex indica UNA sola stanza di prova** (`climate.<stanza>`). Durante
+Prima di iniziare: la stanza di prova e' **una sola**, `climate.termostato_casa` (dichiara `min_temp` 15, `max_temp` 25, `hvac_modes` heat/off). Durante
 tutta la prova si assegna il programma solo a quella stanza. Lo Scheduler resta com'e'
 e non si tocca; la stanza di prova va tolta dallo Scheduler (o se ne disattiva solo la
 regola di quella stanza) per tutta la durata, altrimenti i due si sovrascrivono.
 
-Stanza di prova: `climate.______`   Data: ______
+Stanza di prova: `climate.termostato_casa`   Data: ______
 
 ## 0. Installazione
 
@@ -70,7 +70,13 @@ Stanza di prova: `climate.______`   Data: ______
       applicata la fascia di quel momento.
 - [ ] Modo non supportato (fascia `cool` su un termostato solo `heat`/`off`): `status: unsupported_mode`
       e un avviso nel log; il modo non cambia da solo.
-- [ ] Temperatura fuori dal range del termostato: `status: error` e nessun nuovo tentativo fino al
+- [ ] Limiti dal termostato (`climate.termostato_casa`: min 15, max 25). Fascia a 30 gradi: `status: out_of_range`,
+      nessun comando (ne' modo ne' temperatura), un avviso nel log; al cambio fascia successivo (fascia
+      entro 15-25) torna `ok` e viene applicata.
+- [ ] `set_manual` a 30 gradi (e a 14): errore "fuori dai limiti" (`temperature_out_of_range`), nessuna forzatura
+      salvata, nessun comando. `set_manual` a 25: riesce. Lo switch automatico spento su una fascia fuori limiti
+      d'errore allo stesso modo.
+- [ ] Un valore entro i limiti ma rifiutato dal termostato: `status: error` e nessun nuovo tentativo fino al
       prossimo cambio fascia / ritorno disponibile / azione esplicita (limite noto).
 
 ## 7. Modifica e rimozione

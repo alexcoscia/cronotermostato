@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from homeassistant.const import STATE_OFF, STATE_ON
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
@@ -301,3 +302,21 @@ async def test_platform_failure_stops_manager(hass):
     ):
         assert not await hass.config_entries.async_setup(entry.entry_id)
     assert len(stopped) == 1
+
+
+async def test_switch_off_out_of_climate_range_raises(env):
+    env.hass.states.async_set(
+        ROOM, "heat", {"hvac_modes": ["heat", "off"], "min_temp": 15, "max_temp": 22}
+    )
+    await env.store.async_assign(ROOM, env.program.id)  # slot is 23
+    await env.hass.async_block_till_done()
+    assert env.hass.states.get(SENSOR).attributes["status"] == "out_of_range"
+    env.calls.clear()
+    with pytest.raises(ServiceValidationError) as err:
+        await env.hass.services.async_call(
+            "switch", "turn_off", {"entity_id": SWITCH}, blocking=True
+        )
+    assert err.value.translation_key == "temperature_out_of_range"
+    assert env.store.overrides == {}
+    assert env.calls == []
+    assert env.hass.states.get(SWITCH).state == STATE_ON

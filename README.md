@@ -161,7 +161,8 @@ data:
 ```
 
 Room services fail with an error if the room is not assigned; invalid programs
-fail with an `invalid_program` error that says what is wrong.
+fail with an `invalid_program` error that says what is wrong. `set_manual` with a
+temperature outside the limits of the thermostat fails with `temperature_out_of_range`.
 
 ## Entities
 
@@ -170,8 +171,8 @@ For each assigned room (one device per room; entity ids use the room name, in It
 - `sensor.<room>_programma`: state is the name of the program. Attributes: `slot` and
   `next_slot` (`start`, `end`, `mode`, `temperature`, `auto`), `slot_end`, `manual`,
   `override_until`, `auto_slot`, `holiday` (today is a holiday), `status`.
-  `status` is one of `ok`, `paused`, `unavailable`, `unsupported_mode`, `missing`,
-  `error`.
+  `status` is one of `ok`, `paused`, `unavailable`, `unsupported_mode`, `out_of_range`,
+  `missing`, `error`.
 - `switch.<room>_automatico`: on while the room follows its program. Turning it off
   forces the current slot's setting until the slot ends; turning it on goes back to
   the program.
@@ -213,6 +214,12 @@ Changes to programs are made only with the services.
 - If the thermostat is `unavailable`, nothing is sent; when it comes back the
   current slot is applied. If it does not support the slot's mode, nothing is sent
   and the status is `unsupported_mode`.
+- Temperature limits come from the `climate` entity (`min_temp`, `max_temp` attributes);
+  if they are missing or invalid (not numbers, or min >= max) 5.0 and 35.0 °C are used.
+  A `heat`/`cool` slot (or override) outside the limits is not sent at all (neither mode
+  nor temperature, so the room is not left half set): status `out_of_range` and one
+  warning in the log. The next slot change, or an explicit action, tries again. `off`
+  has no temperature and is never out of range.
 - Holidays come from the `holidays` library for the chosen country and region.
 - Daylight saving time: a time that does not exist (29 March in Italy) moves to the
   hour of the change; a repeated time (25 October) means its first occurrence.
@@ -226,14 +233,18 @@ the two will overwrite each other.
 
 ## Known limits
 
-- Slots have no temperature limit. If the thermostat rejects a value outside its
-  range, the room goes to status `error`.
+- Saving a program does **not** check temperatures against any thermostat (a program
+  does not know its rooms, and the same program can serve rooms with different limits).
+  A slot outside the limits of a room shows up only when it is applied, as status
+  `out_of_range`. `set_manual` and the automatic switch, which target one room, do
+  check and fail with `temperature_out_of_range`. A thermostat that rejects a value
+  within the declared limits still gives status `error`.
 - After `error` there is no retry until the next slot change, until the thermostat
   comes back, or until an explicit action (assign, resume, resume_auto, program edit).
 - An override whose command never went out (Home Assistant stopped right after saving
   it) is not re-sent after the restart.
-- The temperature selector of `set_manual` in `services.yaml` shows 5-35, but the schema
-  does not enforce these limits (consistent with slots having no limit).
+- The temperature selector of `set_manual` in `services.yaml` shows 5-35 as a hint; the
+  real limits are those of the room's `climate`, checked when the service runs.
 - Program names are at most 100 characters; ids are slugs of at most 50 characters.
 - `cronotermostato/state` is readable by every authenticated user.
 - Only one configuration entry; one program per room.

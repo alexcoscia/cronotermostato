@@ -66,6 +66,9 @@
     },
     "room_not_assigned": {
       "message": "La stanza {entity_id} non è assegnata a un programma."
+    },
+    "temperature_out_of_range": {
+      "message": "La temperatura {temperature} è fuori dai limiti di {entity_id} ({min}-{max} °C)."
     }
   },
   "entity": {

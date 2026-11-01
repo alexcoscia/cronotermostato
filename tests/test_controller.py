@@ -11,7 +11,11 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from pytest_homeassistant_custom_component.common import async_fire_time_changed
 
 from custom_components.cronotermostato.const import SIGNAL_ROOM_UPDATED
-from custom_components.cronotermostato.controller import RoomController
+from custom_components.cronotermostato.const import DEFAULT_MAX_TEMP, DEFAULT_MIN_TEMP
+from custom_components.cronotermostato.controller import (
+    RoomController,
+    temperature_limits,
+)
 from custom_components.cronotermostato.engine.calendar import HolidayCalendar
 from custom_components.cronotermostato.engine.models import Band, ProgramError
 from custom_components.cronotermostato.manager import Manager
@@ -42,8 +46,10 @@ class Env:
     managers: list = field(default_factory=list)
     other_calls: list = field(default_factory=list)
 
-    def set_climate(self, state="heat", modes=("heat", "off")):
-        self.hass.states.async_set(ROOM, state, {"hvac_modes": list(modes)})
+    def set_climate(self, state="heat", modes=("heat", "off"), **attributes):
+        self.hass.states.async_set(
+            ROOM, state, {"hvac_modes": list(modes), **attributes}
+        )
 
     def manager(self) -> Manager:
         manager = Manager(self.hass, self.store, self.calendar)
@@ -669,3 +675,187 @@ async def test_no_double_command_when_listener_queues_behind_lock(env):
     await task
     await env.hass.async_block_till_done()
     assert env.calls == [("set_hvac_mode", "heat"), ("set_temperature", 26.0)]
+
+
+# -- temperature limits taken from the climate ---------------------------
+
+
+def _state(**attributes):
+    from homeassistant.core import State
+
+    return State(ROOM, "heat", attributes)
+
+
+@pytest.mark.parametrize(
+    ("state", "expected"),
+    [
+        (_state(min_temp=15, max_temp=25), (15.0, 25.0)),
+        (_state(min_temp=15.5, max_temp=25.5), (15.5, 25.5)),
+        (_state(min_temp="16", max_temp="24"), (16.0, 24.0)),
+        (_state(), (DEFAULT_MIN_TEMP, DEFAULT_MAX_TEMP)),
+        (None, (DEFAULT_MIN_TEMP, DEFAULT_MAX_TEMP)),
+        (_state(min_temp=None, max_temp=None), (DEFAULT_MIN_TEMP, DEFAULT_MAX_TEMP)),
+        (_state(min_temp="abc", max_temp="xyz"), (DEFAULT_MIN_TEMP, DEFAULT_MAX_TEMP)),
+        (_state(min_temp=15), (DEFAULT_MIN_TEMP, DEFAULT_MAX_TEMP)),
+        (_state(max_temp=25), (DEFAULT_MIN_TEMP, DEFAULT_MAX_TEMP)),
+        (_state(min_temp=25, max_temp=15), (DEFAULT_MIN_TEMP, DEFAULT_MAX_TEMP)),
+        (_state(min_temp=20, max_temp=20), (DEFAULT_MIN_TEMP, DEFAULT_MAX_TEMP)),
+        (_state(min_temp=float("nan"), max_temp=25), (DEFAULT_MIN_TEMP, DEFAULT_MAX_TEMP)),
+        (_state(min_temp=15, max_temp=float("inf")), (DEFAULT_MIN_TEMP, DEFAULT_MAX_TEMP)),
+        (_state(min_temp=True, max_temp=25), (DEFAULT_MIN_TEMP, DEFAULT_MAX_TEMP)),
+    ],
+)
+def test_temperature_limits(state, expected):
+    assert temperature_limits(state) == expected
+
+
+async def test_slot_inside_climate_limits_is_applied(env):
+    env.set_climate(min_temp=15, max_temp=25)
+    await env.store.async_assign(ROOM, env.program_id)  # 23 degrees
+    manager = await env.start()
+    assert env.calls == HEAT_23
+    assert manager.controllers[ROOM].state.status == "ok"
+
+
+async def test_slot_at_the_limit_is_applied(env):
+    env.set_climate(min_temp=15, max_temp=23)
+    await env.store.async_assign(ROOM, env.program_id)
+    manager = await env.start()
+    assert env.calls == HEAT_23
+    assert manager.controllers[ROOM].state.status == "ok"
+
+
+async def test_slot_out_of_climate_limits_sends_nothing(env, caplog):
+    env.set_climate(min_temp=15, max_temp=22)  # slot is 23
+    await env.store.async_assign(ROOM, env.program_id)
+    manager = await env.start()
+    assert env.calls == []  # neither mode nor temperature
+    assert manager.controllers[ROOM].state.status == "out_of_range"
+    assert manager.controllers[ROOM]._last_applied is None
+    assert "outside" in caplog.text
+
+
+async def test_slot_below_climate_minimum(env):
+    env.set_climate(min_temp=24, max_temp=30)
+    await env.store.async_assign(ROOM, env.program_id)
+    manager = await env.start()
+    assert env.calls == []
+    assert manager.controllers[ROOM].state.status == "out_of_range"
+
+
+async def test_defaults_used_when_climate_has_no_limits(env):
+    week = ((Band(480, 720, "heat", 36.0),),) * 7
+    hot = await env.store.async_create_program("Caldo", week, ())
+    await env.store.async_assign(ROOM, hot.id)
+    manager = await env.start()
+    assert env.calls == []
+    assert manager.controllers[ROOM].state.status == "out_of_range"
+    week = ((Band(480, 720, "heat", 4.0),),) * 7
+    await env.store.async_update_program(hot.id, week=week)
+    await env.hass.async_block_till_done()
+    assert env.calls == []
+    assert manager.controllers[ROOM].state.status == "out_of_range"
+    week = ((Band(480, 720, "heat", 35.0),),) * 7
+    await env.store.async_update_program(hot.id, week=week)
+    await env.hass.async_block_till_done()
+    assert env.calls == [("set_hvac_mode", "heat"), ("set_temperature", 35.0)]
+    assert manager.controllers[ROOM].state.status == "ok"
+
+
+@pytest.mark.parametrize(
+    "attrs",
+    [
+        {"min_temp": None, "max_temp": None},
+        {"min_temp": "x", "max_temp": "y"},
+        {"min_temp": 30, "max_temp": 10},
+    ],
+)
+async def test_malformed_limits_fall_back_to_defaults(env, attrs):
+    env.set_climate(**attrs)
+    await env.store.async_assign(ROOM, env.program_id)
+    manager = await env.start()
+    assert env.calls == HEAT_23
+    assert manager.controllers[ROOM].state.status == "ok"
+
+
+async def test_out_of_range_then_ok_at_next_boundary(env):
+    env.set_climate(min_temp=15, max_temp=22)
+    await env.store.async_assign(ROOM, env.program_id)  # 23, then off, then 20
+    manager = await env.start()
+    assert manager.controllers[ROOM].state.status == "out_of_range"
+    await env.go(at(26, 12))  # off: no temperature, never out of range
+    assert env.calls == [("set_hvac_mode", "off")]
+    assert manager.controllers[ROOM].state.status == "ok"
+    env.calls.clear()
+    await env.go(at(26, 18))  # 20 inside
+    assert env.calls == [("set_hvac_mode", "heat"), ("set_temperature", 20.0)]
+    assert manager.controllers[ROOM].state.status == "ok"
+
+
+async def test_out_of_range_retries_at_boundary_with_same_setting(env):
+    """After out_of_range the same (mode, temperature) is tried again."""
+    week = ((Band(480, 720, "heat", 23.0), Band(1080, 1380, "heat", 23.0)),) * 7
+    prog = await env.store.async_create_program("Doppia", week, ())
+    env.set_climate(min_temp=15, max_temp=22)
+    await env.store.async_assign(ROOM, prog.id)
+    manager = await env.start()
+    assert manager.controllers[ROOM].state.status == "out_of_range"
+    env.set_climate(min_temp=15, max_temp=25)  # the thermostat now allows it
+    env.calls.clear()
+    await env.go(at(26, 12))  # off slot
+    await env.go(at(26, 18))  # 23 again
+    assert env.calls == [("set_hvac_mode", "off")] + HEAT_23
+    assert manager.controllers[ROOM].state.status == "ok"
+
+
+async def test_out_of_range_warns_once_per_change(env, caplog):
+    env.set_climate(min_temp=15, max_temp=22)
+    await env.store.async_assign(ROOM, env.program_id)
+    manager = await env.start()
+    await manager.controllers[ROOM].async_refresh()
+    await manager.controllers[ROOM].async_refresh()
+    assert caplog.text.count("outside") == 1
+
+
+async def test_override_out_of_range_sends_nothing(env):
+    """A stored override (e.g. restored) outside the limits is not sent."""
+    env.set_climate(min_temp=15, max_temp=22)
+    await env.store.async_assign(ROOM, env.program_id)
+    manager = await env.start()
+    env.calls.clear()
+    await env.store.async_set_override(
+        ROOM, Override("heat", 30.0, at(26, 12).astimezone(UTC))
+    )
+    await env.hass.async_block_till_done()
+    assert env.calls == []
+    assert manager.controllers[ROOM].state.status == "out_of_range"
+
+
+async def test_set_manual_out_of_range_raises_and_stores_nothing(env):
+    env.set_climate(min_temp=15, max_temp=25)
+    await env.store.async_assign(ROOM, env.program_id)
+    manager = await env.start()
+    env.calls.clear()
+    with pytest.raises(ServiceValidationError) as err:
+        await manager.controllers[ROOM].async_set_manual("heat", 30.0)
+    assert err.value.translation_key == "temperature_out_of_range"
+    assert err.value.translation_placeholders == {
+        "min": "15.0",
+        "max": "25.0",
+        "temperature": "30.0",
+        "entity_id": ROOM,
+    }
+    assert env.store.overrides == {}
+    assert env.calls == []
+
+
+async def test_set_manual_uses_defaults_when_climate_missing(env):
+    await env.store.async_assign(ROOM, env.program_id)
+    manager = await env.start()
+    env.hass.states.async_remove(ROOM)
+    await env.hass.async_block_till_done()
+    controller = manager.controllers[ROOM]
+    with pytest.raises(ServiceValidationError):
+        await controller.async_set_manual("heat", 36.0)
+    await controller.async_set_manual("heat", 30.0)  # inside 5-35
+    assert env.store.overrides[ROOM].temperature == 30.0
