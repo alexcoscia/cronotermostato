@@ -15,7 +15,7 @@ never exists without a controller. The program entities follow the store.
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
@@ -31,6 +31,7 @@ from .const import DOMAIN, SIGNAL_ROOM_UPDATED
 if TYPE_CHECKING:
     from . import CronoData
     from .controller import RoomController
+    from .engine.timeline import Slot
 
 
 def room_name(hass: HomeAssistant, climate_id: str) -> str:
@@ -45,6 +46,19 @@ def room_name(hass: HomeAssistant, climate_id: str) -> str:
     if state is not None:
         return state.name
     return climate_id.split(".", 1)[1].replace("_", " ")
+
+
+def slot_dict(slot: Slot | None) -> dict[str, Any] | None:
+    """JSON-serializable form of a slot (datetimes in ISO format)."""
+    if slot is None:
+        return None
+    return {
+        "start": slot.start.isoformat(),
+        "end": slot.end.isoformat(),
+        "mode": slot.band.mode,
+        "temperature": slot.band.temperature,
+        "auto": slot.band.auto,
+    }
 
 
 class RoomEntity(Entity):

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
-from datetime import datetime
 from typing import Any
 
 from homeassistant.components.sensor import SensorEntity
@@ -13,10 +11,9 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import CronoConfigEntry, CronoData
 from .const import SIGNAL_ROOMS_CHANGED
-from .engine.day import normalize_day
-from .engine.models import Program, program_to_dict
-from .engine.timeline import Slot
-from .entity import EntityTracker, RoomEntity
+from .engine.day import program_views
+from .engine.models import Program
+from .entity import EntityTracker, RoomEntity, slot_dict
 
 
 async def async_setup_entry(
@@ -45,18 +42,6 @@ async def async_setup_entry(
     )
     entry.async_on_unload(data.store.async_add_listener(tracker.reconcile))
     tracker.reconcile()
-
-
-def _slot_dict(slot: Slot | None) -> dict[str, Any] | None:
-    if slot is None:
-        return None
-    return {
-        "start": slot.start.isoformat(),
-        "end": slot.end.isoformat(),
-        "mode": slot.band.mode,
-        "temperature": slot.band.temperature,
-        "auto": slot.band.auto,
-    }
 
 
 class RoomProgramSensor(RoomEntity, SensorEntity):
@@ -88,8 +73,8 @@ class RoomProgramSensor(RoomEntity, SensorEntity):
         state = controller.state
         slot = state.slot
         return {
-            "slot": _slot_dict(slot),
-            "next_slot": _slot_dict(state.next_slot),
+            "slot": slot_dict(slot),
+            "next_slot": slot_dict(state.next_slot),
             "slot_end": slot.end.isoformat() if slot else None,
             "manual": state.manual,
             "override_until": (
@@ -151,24 +136,7 @@ class ProgramSensor(SensorEntity):
     def extra_state_attributes(self) -> dict[str, Any] | None:
         if not self.available:
             return None
-        program = self._program
-        full = program_to_dict(
-            replace(
-                program,
-                week=tuple(normalize_day(day) for day in program.week),
-                holiday=normalize_day(program.holiday),
-            )
-        )
-        user = program_to_dict(program)
-        return {
-            "program_id": program.id,
-            "name": program.name,
-            "week": user["week"],
-            "holiday": user["holiday"],
-            "week_full": full["week"],
-            "holiday_full": full["holiday"],
-            "rooms": self._rooms,
-        }
+        return {**program_views(self._program), "rooms": self._rooms}
 
     async def async_added_to_hass(self) -> None:
         self.async_on_remove(self._data.store.async_add_listener(self._changed))

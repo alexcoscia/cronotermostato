@@ -16,6 +16,7 @@ from .engine.calendar import HolidayCalendar
 from .manager import Manager
 from .services import async_register_services
 from .store import CronoStore
+from .websocket_api import async_register_websocket_api
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -41,8 +42,9 @@ def entry_location(entry: ConfigEntry) -> tuple[str, str | None]:
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Register the services (they exist even without a loaded entry)."""
+    """Register services and WebSocket commands (they exist even without a loaded entry)."""
     async_register_services(hass)
+    async_register_websocket_api(hass)
     return True
 
 
