@@ -1,4 +1,4 @@
-// Testi italiani dell'editor. Solo testo semplice (mai HTML); `{nome}` e un
+// Testi italiani dell'editor. Solo testo semplice (mai HTML); `{name}` è un
 // segnaposto sostituito con del testo. Chiavi e segnaposto identici a en.js.
 export default {
   "app.title": "Cronotermostato",
@@ -33,7 +33,8 @@ export default {
   "program.untitled": "Nuovo programma",
   "program.rooms_one": "{count} stanza",
   "program.rooms_other": "{count} stanze",
-  "program.in_use": "Questo programma è usato da {count} stanza/e. Toglilo dalle stanze prima di eliminarlo.",
+  "program.in_use_one": "Questo programma è usato da 1 stanza. Toglilo dalla stanza prima di eliminarlo.",
+  "program.in_use_other": "Questo programma è usato da {count} stanze. Toglilo dalle stanze prima di eliminarlo.",
   "program.remove_from_rooms": "Rimuovi dalle stanze",
   "program.delete_confirm": "Eliminare il programma {name}? Non si può annullare.",
   "program.removed": "Il programma è stato eliminato altrove.",

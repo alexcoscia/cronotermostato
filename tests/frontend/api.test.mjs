@@ -50,8 +50,51 @@ test("errors without a string code are network errors; other server codes are in
     const err = await rejection(api.loadState(hass));
     assert.equal(err.code, "network", String(thrown));
   }
-  const hass = makeHass({ ws: { "cronotermostato/state": () => { throw { code: "home_assistant_error", message: "m" }; } } });
-  assert.equal((await rejection(api.loadState(hass))).code, "invalid_format");
+  for (const code of ["service_validation_error", "something_new"]) {
+    const hass = makeHass({ ws: { "cronotermostato/state": () => { throw { code, message: "m" }; } } });
+    assert.equal((await rejection(api.loadState(hass))).code, "invalid_format", code);
+  }
+});
+
+test("transient HA errors (unknown_error, home_assistant_error) are network, so retryable", async () => {
+  for (const code of ["unknown_error", "home_assistant_error"]) {
+    const hass = makeHass({ ws: { "cronotermostato/state": () => { throw { code, message: "m" }; } } });
+    assert.equal((await rejection(api.loadState(hass))).code, "network", code);
+  }
+});
+
+test("a null answer to save_program is an EditorError, not a TypeError", async () => {
+  const hass = makeHass({ ws: { "cronotermostato/save_program": () => null } });
+  const err = await rejection(api.saveProgram(hass, { name: "x", week: [], holiday: [] }));
+  assert.ok(err instanceof EditorError);
+  assert.equal(err.code, "invalid_format");
+});
+
+test("a failed subscription leaves no ready listener, also after cancel", async () => {
+  const hass = makeHass();
+  hass.subscribeError = { code: "not_loaded", message: "no" };
+  const cancel = api.subscribe(hass, () => {}, { onError: () => {} });
+  await flush();
+  assert.equal(hass.readyListeners.size, 0);
+  cancel();
+  assert.equal(hass.readyListeners.size, 0);
+});
+
+test("a rejecting unsubscribe function is swallowed (cancel before and after establishing)", async () => {
+  const hass = makeHass();
+  const rejections = [];
+  const onRejection = (e) => rejections.push(e);
+  process.on("unhandledRejection", onRejection);
+  hass.connection.subscribeMessage = async () => () => Promise.reject(new Error("closed"));
+  const early = api.subscribe(hass, () => {});
+  early();
+  const late = api.subscribe(hass, () => {});
+  await flush();
+  late();
+  await flush();
+  await flush();
+  process.off("unhandledRejection", onRejection);
+  assert.deepEqual(rejections, []);
 });
 
 test("an EditorError passes through unchanged", async () => {

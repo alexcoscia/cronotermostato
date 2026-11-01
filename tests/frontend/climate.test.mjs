@@ -82,3 +82,9 @@ test("garbage in does not throw", () => {
   assert.deepEqual(roomIssues({ week: "x", holiday: null }, room()), []);
   assert.deepEqual(roomIssues(program([null, 5]), room()), []);
 });
+
+test("an unknown state is unavailable, like in the controller", () => {
+  const rooms = climateRooms({ states: { "climate.u": state("unknown", {}), "climate.h": state("heat", {}) } });
+  assert.equal(rooms.find((r) => r.id === "climate.u").available, false);
+  assert.equal(rooms.find((r) => r.id === "climate.h").available, true);
+});

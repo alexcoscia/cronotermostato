@@ -1,6 +1,10 @@
 // Calls to the WebSocket API and the services of the integration. No DOM.
 // Every failure becomes an EditorError {code, message, detailCode}:
 //   code: conflict | not_found | invalid_format | unauthorized | not_loaded | network
+//   Mapping of the other string codes of HA: `unknown_error` and
+//   `home_assistant_error` (transient server-side failures) become `network`,
+//   so the store retries them; `service_validation_error` and any unknown
+//   string become `invalid_format`. A code that is not a string is `network`.
 //   detailCode: the `detail_code` of the server answer (the stable ProgramError
 //   code: overlap, bad_time, program_in_use...) or null.
 // The server remains the authority; the editor only asks and shows.
@@ -8,6 +12,7 @@
 import { stripAuto, serializeBand } from "./model.js";
 
 const DOMAIN = "cronotermostato";
+const TRANSIENT_CODES = new Set(["unknown_error", "home_assistant_error"]);
 const SERVER_CODES = new Set(["conflict", "not_found", "invalid_format", "unauthorized", "not_loaded"]);
 
 export class EditorError extends Error {
@@ -23,7 +28,7 @@ export class EditorError extends Error {
 export function toEditorError(err) {
   if (err instanceof EditorError) return err;
   if (err !== null && typeof err === "object" && typeof err.code === "string") {
-    const code = SERVER_CODES.has(err.code) ? err.code : "invalid_format";
+    const code = SERVER_CODES.has(err.code) ? err.code : TRANSIENT_CODES.has(err.code) ? "network" : "invalid_format";
     const detail = typeof err.detail_code === "string" ? err.detail_code : null;
     return new EditorError(code, typeof err.message === "string" ? err.message : err.code, detail);
   }
@@ -85,6 +90,7 @@ export async function saveProgram(hass, { programId, name, week, holiday, expect
     holiday: stripAuto(holiday),
     ...compact({ expected_revision: expectedRevision }),
   });
+  if (result === null || typeof result !== "object") throw new EditorError("invalid_format", "Invalid answer from the server");
   return { programId: result.program_id, revision: result.revision };
 }
 
@@ -118,9 +124,10 @@ export function setManual(hass, climateEntityId, { mode, temperature, preset }) 
  * Listen to `changed` events. Returns a function that cancels (idempotent,
  * safe before the subscription is established). Options:
  *   onError(EditorError): the subscription could not be made (e.g. not_loaded);
+ *   onSubscribed(): the subscription is established;
  *   onReconnect(): the socket reconnected, so events may have been missed.
  */
-export function subscribe(hass, onChange, { onError, onReconnect } = {}) {
+export function subscribe(hass, onChange, { onError, onReconnect, onSubscribed } = {}) {
   let cancelled = false;
   let unsub = null;
   const connection = hass.connection;
@@ -139,11 +146,17 @@ export function subscribe(hass, onChange, { onError, onReconnect } = {}) {
     )
     .then(
       (fn) => {
-        if (cancelled) fn();
-        else unsub = fn;
+        if (cancelled) Promise.resolve(fn()).catch(() => {});
+        else {
+          unsub = fn;
+          onSubscribed?.();
+        }
       },
       (err) => {
-        if (!cancelled) onError?.(toEditorError(err));
+        if (cancelled) return;
+        cancelled = true; // a failed subscription is over: no more `ready` listener
+        connection.removeEventListener?.("ready", onReady);
+        onError?.(toEditorError(err));
       },
     );
   return () => {
@@ -153,7 +166,7 @@ export function subscribe(hass, onChange, { onError, onReconnect } = {}) {
     if (unsub) {
       const fn = unsub;
       unsub = null;
-      fn();
+      Promise.resolve(fn()).catch(() => {});
     }
   };
 }

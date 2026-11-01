@@ -73,3 +73,11 @@ test("tn picks the plural form", () => {
   assert.equal(tn(hass, "program.rooms", 3), it["program.rooms_other"].replace("{count}", "3"));
   assert.equal(tn({ language: "en" }, "program.rooms", 0), en["program.rooms_other"].replace("{count}", "0"));
 });
+
+test("program.in_use has plural forms and a count", () => {
+  assert.ok(!("program.in_use" in it) && !("program.in_use" in en));
+  assert.equal(tn({ language: "it" }, "program.in_use", 1).includes("1 stanza"), true);
+  assert.equal(tn({ language: "it" }, "program.in_use", 3).includes("3 stanze"), true);
+  assert.equal(tn({ language: "en" }, "program.in_use", 1).includes("1 room"), true);
+  assert.equal(tn({ language: "en" }, "program.in_use", 2).includes("2 rooms"), true);
+});

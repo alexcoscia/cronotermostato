@@ -35,7 +35,7 @@ export function climateRooms(hass) {
       return {
         id,
         name: typeof attributes.friendly_name === "string" && attributes.friendly_name.trim() ? attributes.friendly_name : id,
-        available: state?.state !== "unavailable",
+        available: state?.state !== "unavailable" && state?.state !== "unknown",
         hvacModes: strings(attributes.hvac_modes),
         presetModes: strings(attributes.preset_modes),
         minTemp,

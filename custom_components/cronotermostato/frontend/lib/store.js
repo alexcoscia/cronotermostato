@@ -1,7 +1,8 @@
 // Reactive state of the editor: {programs, rooms, country, subdiv, options,
 // loading, error, notLoaded}. No DOM.
 //
-// * `changed` events of the server are debounced (250 ms) into one `state` read.
+// * `changed` events of the server are debounced (250 ms, at most 2 s from the
+//   first of a burst) into one `state` read.
 // * `not_loaded` (state or subscription) sets `notLoaded` and retries with a
 //   growing delay; on success it subscribes again. The server sends `changed`
 //   after an entry reload, but only to a subscription that exists: so after
@@ -12,6 +13,7 @@
 import { loadState, subscribe, toEditorError } from "./api.js";
 
 export const DEBOUNCE_MS = 250;
+export const MAX_WAIT_MS = 2000; // a continuous burst of events still reads at least this often
 export const RETRY_MS = [5000, 15000, 30000];
 
 const RETRY_CODES = new Set(["not_loaded", "network"]);
@@ -29,7 +31,7 @@ const initialState = () => ({
 
 const byNameThenId = (a, b) => String(a.name).localeCompare(String(b.name)) || String(a.program_id).localeCompare(String(b.program_id));
 
-export function createStore({ debounceMs = DEBOUNCE_MS, retryMs = RETRY_MS } = {}) {
+export function createStore({ debounceMs = DEBOUNCE_MS, maxWaitMs = MAX_WAIT_MS, retryMs = RETRY_MS } = {}) {
   let state = initialState();
   let hass = null;
   let active = false;
@@ -38,6 +40,9 @@ export function createStore({ debounceMs = DEBOUNCE_MS, retryMs = RETRY_MS } = {
   let inFlight = false;
   let rerun = false;
   let debounceTimer = null;
+  let maxTimer = null;
+  let readOk = false; // the last read worked
+  let subOk = false; // the subscription is established
   let retryTimer = null;
   let retryIndex = 0;
   let cancelSubscription = null;
@@ -51,7 +56,13 @@ export function createStore({ debounceMs = DEBOUNCE_MS, retryMs = RETRY_MS } = {
   const clearTimers = () => {
     clearTimeout(debounceTimer);
     clearTimeout(retryTimer);
-    debounceTimer = retryTimer = null;
+    clearTimeout(maxTimer);
+    debounceTimer = retryTimer = maxTimer = null;
+  };
+
+  // The retry delays restart only when both the read and the subscription work.
+  const maybeResetRetry = () => {
+    if (readOk && subOk) retryIndex = 0;
   };
 
   function scheduleRetry() {
@@ -70,8 +81,15 @@ export function createStore({ debounceMs = DEBOUNCE_MS, retryMs = RETRY_MS } = {
     const cancel = subscribe(hass, onChanged, {
       onError: (err) => {
         if (run !== generation || cancelSubscription !== cancel) return;
+        cancel(); // idempotent; also removes anything the subscription left
         cancelSubscription = null;
+        subOk = false;
         handleError(err);
+      },
+      onSubscribed: () => {
+        if (run !== generation || cancelSubscription !== cancel) return;
+        subOk = true;
+        maybeResetRetry();
       },
       onReconnect: onChanged,
     });
@@ -96,7 +114,8 @@ export function createStore({ debounceMs = DEBOUNCE_MS, retryMs = RETRY_MS } = {
     try {
       const loaded = await loadState(hass);
       if (run !== generation || seq !== readSeq) return;
-      retryIndex = 0;
+      readOk = true;
+      maybeResetRetry();
       set({
         programs: [...loaded.programs].sort(byNameThenId),
         rooms: loaded.rooms,
@@ -110,6 +129,7 @@ export function createStore({ debounceMs = DEBOUNCE_MS, retryMs = RETRY_MS } = {
       ensureSubscription();
     } catch (err) {
       if (run !== generation || seq !== readSeq) return;
+      readOk = false;
       handleError(toEditorError(err));
       ensureSubscription();
     } finally {
@@ -132,11 +152,15 @@ export function createStore({ debounceMs = DEBOUNCE_MS, retryMs = RETRY_MS } = {
 
   function onChanged() {
     if (!active) return;
-    clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => {
-      debounceTimer = null;
+    const fire = () => {
+      clearTimeout(debounceTimer);
+      clearTimeout(maxTimer);
+      debounceTimer = maxTimer = null;
       read();
-    }, debounceMs);
+    };
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(fire, debounceMs);
+    if (maxTimer === null) maxTimer = setTimeout(fire, maxWaitMs);
   }
 
   return {
@@ -156,6 +180,7 @@ export function createStore({ debounceMs = DEBOUNCE_MS, retryMs = RETRY_MS } = {
       active = true;
       generation += 1;
       retryIndex = 0;
+      readOk = subOk = false;
       inFlight = false;
       rerun = false;
       set({ loading: true });
@@ -170,6 +195,7 @@ export function createStore({ debounceMs = DEBOUNCE_MS, retryMs = RETRY_MS } = {
       clearTimers();
       cancelSubscription?.();
       cancelSubscription = null;
+      readOk = subOk = false;
     },
     refresh,
   };

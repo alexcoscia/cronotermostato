@@ -268,3 +268,61 @@ test("setHass uses the newest hass for the next read", async () => {
   assert.equal(hass.activeSubs().length, 1); // same connection: no resubscription
   store.stop();
 });
+
+test("a failed subscription leaves no ready listener, during retries and after stop", async () => {
+  const { hass, store } = setup();
+  hass.subscribeError = { code: "not_loaded", message: "no" };
+  store.start(hass);
+  await settle();
+  assert.equal(hass.readyListeners.size, 0);
+  for (let i = 0; i < 4; i++) {
+    mock.timers.tick(30000);
+    await settle();
+    assert.equal(hass.readyListeners.size, 0);
+  }
+  store.stop();
+  assert.equal(hass.readyListeners.size, 0);
+});
+
+test("retry delays grow 5/15/30/30 s when only the subscription keeps failing", async () => {
+  const { hass, store } = setup();
+  hass.subscribeError = { code: "not_loaded", message: "no" };
+  store.start(hass);
+  await settle();
+  const reads = () => hass.wsCount("cronotermostato/state");
+  assert.equal(reads(), 1);
+  for (const [delay, expected] of [[5000, 2], [15000, 3], [30000, 4], [30000, 5]]) {
+    mock.timers.tick(delay - 1);
+    await settle();
+    assert.equal(reads(), expected - 1, `before ${delay}`);
+    mock.timers.tick(1);
+    await settle();
+    assert.equal(reads(), expected, `at ${delay}`);
+  }
+  store.stop();
+});
+
+test("a failed first read still starts the subscription", async () => {
+  const { hass, store } = setup();
+  hass.wsHandlers["cronotermostato/state"] = () => { throw new Error("offline"); };
+  store.start(hass);
+  await settle();
+  assert.equal(store.getState().error.code, "network");
+  assert.equal(hass.activeSubs().length, 1);
+  store.stop();
+});
+
+test("a continuous burst of changed events still reads within the maximum wait", async () => {
+  const { hass, store } = setup();
+  store.start(hass);
+  await settle();
+  assert.equal(hass.wsCount("cronotermostato/state"), 1);
+  for (let i = 0; i < 30; i++) {
+    hass.emit();
+    mock.timers.tick(100); // always faster than the 250 ms debounce
+  }
+  await settle();
+  assert.ok(hass.wsCount("cronotermostato/state") >= 2);
+  assert.ok(hass.wsCount("cronotermostato/state") <= 3);
+  store.stop();
+});
