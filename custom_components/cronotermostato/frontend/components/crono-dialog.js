@@ -35,11 +35,11 @@ export class CronoDialog extends LitElement {
         border-radius: var(--crono-radius);
         background: var(--crono-surface);
         color: var(--crono-text);
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+        box-shadow: var(--mdc-dialog-box-shadow, 0 8px 32px rgba(0, 0, 0, 0.35));
         overflow: auto;
       }
       dialog::backdrop {
-        background: rgba(0, 0, 0, 0.5);
+        background: var(--mdc-dialog-scrim-color, rgba(0, 0, 0, 0.5));
       }
       .head {
         padding: 16px 16px 4px;

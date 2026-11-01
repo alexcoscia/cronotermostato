@@ -199,3 +199,55 @@ test("the hatch is not drawn behind text: .is-auto has no background image", () 
   const row = readFileSync(new URL("../../custom_components/cronotermostato/frontend/components/crono-band-row.js", import.meta.url), "utf8");
   assert.doesNotMatch(row, /\.row\s*\{[^}]*gradient/);
 });
+
+// Theme: outside styles.js a colour literal may only appear as the fallback of a Home Assistant
+// variable, `var(--x, #fff)`; styles.js holds the tokens (and our own mode/status colours).
+test("no colour literal outside styles.js unless it is the fallback of a CSS variable", async () => {
+  const { readdirSync, statSync } = await import("node:fs");
+  const dir = new URL("../../custom_components/cronotermostato/frontend/", import.meta.url).pathname;
+  const files = (d) => readdirSync(d).flatMap((n) => (statSync(`${d}${n}`).isDirectory() ? files(`${d}${n}/`) : n.endsWith(".js") ? [`${d}${n}`] : []));
+  const stripFallbacks = (text) => {
+    let out = text;
+    for (let i = 0; i < 6; i++) out = out.replace(/var\(\s*--[\w-]+\s*,(?:[^()]|\([^()]*\))*\)/g, "VAR");
+    return out;
+  };
+  const found = [];
+  for (const path of files(dir)) {
+    if (/\/(styles|lit)\.js$/.test(path) || path.includes("/i18n/")) continue;
+    const text = readFileSync(path, "utf8").split("\n").filter((l) => !/^\s*(\/\/|\*)/.test(l)).join("\n");
+    for (const m of stripFallbacks(text).matchAll(/#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bhsla?\(/g)) found.push(`${path.slice(dir.length)}: ${m[0]}`);
+  }
+  assert.deepEqual(found, []);
+});
+
+// Accessibility: every transition/animation has its prefers-reduced-motion switch-off in the same file.
+test("motion is switched off by prefers-reduced-motion wherever there is any", async () => {
+  const { readdirSync } = await import("node:fs");
+  const dir = new URL("../../custom_components/cronotermostato/frontend/components/", import.meta.url).pathname;
+  const withMotion = readdirSync(dir).filter((n) => /\b(transition|animation)\s*:/.test(readFileSync(dir + n, "utf8")));
+  assert.ok(withMotion.length >= 2, withMotion.join());
+  for (const n of withMotion) assert.match(readFileSync(dir + n, "utf8"), /@media \(prefers-reduced-motion: reduce\)/, n);
+});
+
+// Phone: each component either sizes itself by its container (a container query, mobile first) or
+// has a layout that is fluid on its own; the second kind is listed with the reason, so a new
+// component cannot slip in without a decision. (The checks at 320 and 360 px were done in a browser.)
+const FLUID = {
+  "crono-dialog.js": "width: min(480px, 100vw - 32px), content scrolls",
+  "crono-manual-dialog.js": "lives inside crono-dialog; single column form",
+  "crono-holiday.js": "flex-wrap line of text and one link, min-height 44px",
+  "crono-rooms.js": "a list; every crono-room-card has its own container query",
+  "crono-card.js": "its width is measured (ResizeObserver) and passed as `narrow` to the editor; the rooms view is fluid",
+  "crono-card-editor.js": "single column form inside the HA card editor dialog",
+};
+test("every component is responsive: a container/media query or a listed fluid layout", async () => {
+  const { readdirSync } = await import("node:fs");
+  const dir = new URL("../../custom_components/cronotermostato/frontend/components/", import.meta.url).pathname;
+  for (const n of readdirSync(dir)) {
+    const text = readFileSync(dir + n, "utf8");
+    const responsive = /container-type:\s*inline-size/.test(text) && /@container|@media \((?:max|min)-width/.test(text);
+    assert.ok(responsive || n in FLUID, `${n} has neither a container query nor an entry in FLUID`);
+    if (n in FLUID) assert.ok(!responsive, `${n} is listed as fluid but has container queries: drop it from FLUID`);
+  }
+  assert.doesNotMatch(readFileSync(dir + "../cronotermostato.js", "utf8"), /100vw(?!\s*-\s*32px)/);
+});

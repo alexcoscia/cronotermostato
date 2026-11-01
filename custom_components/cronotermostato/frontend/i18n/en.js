@@ -17,8 +17,6 @@ export default {
   "common.confirm": "Confirm",
   "common.loading": "Loading...",
   "common.name": "Name",
-  "common.yes": "Yes",
-  "common.no": "No",
 
   "mode.heat": "Heating",
   "mode.cool": "Cooling",
