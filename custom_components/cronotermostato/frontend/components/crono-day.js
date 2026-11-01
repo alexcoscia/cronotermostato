@@ -29,6 +29,7 @@ export class CronoDay extends LitElement {
     hasRooms: { type: Boolean },
     readOnly: { type: Boolean },
     canAdd: { type: Boolean },
+    holiday: { type: Boolean }, // the holiday part, not a day of the week
     _selected: { state: true },
     _barPx: { state: true },
     _flash: { state: true },
@@ -183,6 +184,7 @@ export class CronoDay extends LitElement {
     this.hasRooms = false;
     this.readOnly = false;
     this.canAdd = true;
+    this.holiday = false;
     this._selected = null;
     this._barPx = 0;
     this._observer = null;
@@ -292,15 +294,15 @@ export class CronoDay extends LitElement {
     const hasUser = rows.some((r) => !r.auto);
     return html`
       <div class="head">
-        <h3>${t("day.title", { day: this.label })}</h3>
+        <h3>${this.holiday ? t("day.title_holiday") : t("day.title", { day: this.label })}</h3>
         ${this.readOnly
           ? nothing
           : html`<div class="tools">
               <button class="btn" type="button" ?disabled=${!this.canAdd} @click=${() => this._fire("crono-add")}>${iconPlus()}<span>${t("band.add")}</span></button>
-              <button class="btn" type="button" ?disabled=${!hasUser} @click=${() => this._fire("crono-copy")}>${iconCopy()}<span>${t("band.copy_to")}…</span></button>
+              <button class="btn" type="button" ?disabled=${!hasUser} @click=${() => this._fire("crono-copy")}>${iconCopy()}<span>${this.holiday ? t("band.copy_holiday") : t("band.copy_to")}…</span></button>
             </div>`}
       </div>
-      <div role="group" aria-label=${t("day.bar", { day: this.label })}>
+      <div role="group" aria-label=${this.holiday ? t("day.bar_holiday") : t("day.bar", { day: this.label })}>
         <div class="axis" aria-hidden="true">${HOURS.map((h) => html`<span class=${h % 6 === 0 ? "" : "minor"} style=${styleMap({ left: `${(h / 24) * 100}%` })}>${String(h).padStart(2, "0")}</span>`)}</div>
         <div class="bar">
           ${HOURS.slice(1, -1).map((h) => html`<i class="tick" style=${styleMap({ left: `${(h / 24) * 100}%` })}></i>`)}
@@ -308,7 +310,7 @@ export class CronoDay extends LitElement {
         </div>
       </div>
       <span class="sr" role="status" aria-live="polite">${this._notice}</span>
-      ${!hasUser ? html`<p class="info">${t("day.empty")}</p>` : nothing}
+      ${!hasUser ? html`<p class="info">${this.holiday ? t("day.empty_holiday") : t("day.empty")}</p>` : nothing}
       ${!this.canAdd && !this.readOnly ? html`<p class="info">${iconWarn()}<span>${t("day.full")}</span></p>` : nothing}
       <ul class="list" aria-label=${t("day.bands")}>
         ${repeat(

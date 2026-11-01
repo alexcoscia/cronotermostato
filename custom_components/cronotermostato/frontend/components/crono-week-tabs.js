@@ -6,7 +6,7 @@
 
 import { LitElement, html, css, nothing, styleMap } from "../lit.js";
 import { base, modeColors } from "../styles.js";
-import { iconWarn, iconMode } from "../icons.js";
+import { iconWarn, iconMode, iconFlag } from "../icons.js";
 import { createT, tn } from "../lib/i18n.js";
 import { stripSegments } from "../lib/day-editing.js";
 
@@ -78,6 +78,17 @@ export class CronoWeekTabs extends LitElement {
       .lab .long {
         display: none;
       }
+      .lab > .ic {
+        width: 14px;
+        height: 14px;
+        flex: none;
+      }
+      .lab.holi > .ic {
+        display: none;
+      }
+      .row.holi-row {
+        margin-top: 4px;
+      }
       .lab[aria-pressed="true"] {
         background: var(--crono-text);
         color: var(--crono-surface);
@@ -143,6 +154,9 @@ export class CronoWeekTabs extends LitElement {
         .lab .long {
           display: inline;
         }
+        .lab.holi > .ic {
+          display: block;
+        }
       }
     `,
   ];
@@ -168,9 +182,9 @@ export class CronoWeekTabs extends LitElement {
             const isSel = day.id === this.selected;
             const summary = tn(this.hass, "week.day_summary", day.count, { day: day.full });
             const aria = day.errorCount > 0 ? `${summary}, ${t("week.day_errors")}` : summary;
-            return html`<div class="row ${isSel ? "sel" : ""}">
-              <button class="lab" type="button" aria-pressed=${isSel ? "true" : "false"} aria-label=${aria} title=${day.full} @click=${() => this._choose(day.id)}>
-                <span class="short" aria-hidden="true">${day.label}</span><span class="long" aria-hidden="true">${day.full}</span>
+            return html`<div class="row ${isSel ? "sel" : ""} ${day.holiday ? "holi-row" : ""}">
+              <button class="lab ${day.holiday ? "holi" : ""}" type="button" aria-pressed=${isSel ? "true" : "false"} aria-label=${aria} title=${day.full} @click=${() => this._choose(day.id)}>
+                ${day.holiday ? iconFlag() : nothing}<span class="short" aria-hidden="true">${day.label}</span><span class="long" aria-hidden="true">${day.full}</span>
                 ${day.errorCount > 0 ? html`<span class="bang" aria-hidden="true">${iconWarn()}</span>` : nothing}
               </button>
               <div class="strip" aria-hidden="true">

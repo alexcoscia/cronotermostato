@@ -21,3 +21,4 @@ export const iconMinus = () => wrap(svg`<path d="M5 12h14"/>`, 2.4);
 export const iconDot = () => wrap(svg`<circle cx="12" cy="12" r="5" fill="currentColor"/>`);
 export const iconX = () => wrap(svg`<path d="M6 6l12 12M18 6L6 18"/>`, 2.4);
 export const iconMode = (mode) => (mode === "cool" ? iconCool() : mode === "off" ? iconOff() : iconHeat());
+export const iconFlag = () => wrap(svg`<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>`);

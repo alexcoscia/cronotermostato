@@ -11,6 +11,7 @@ import { previewDay, saveProgram } from "../lib/api.js";
 import { climateRooms } from "../lib/climate.js";
 import { deserializeProgram } from "../lib/model.js";
 import { canEdit, errorMessage } from "../lib/program-list.js";
+import { copyTargetIds, quickTargets } from "../lib/holiday.js";
 import {
   HOLIDAY,
   draftFromServer,
@@ -37,6 +38,7 @@ import { sortPrograms, reconcileSelection, reconcileAfterDelete, neighbourId, se
 import "./crono-program-list.js";
 import "./crono-week-tabs.js";
 import "./crono-day.js";
+import "./crono-holiday.js";
 import "./crono-dialog.js";
 
 const PENDING_MS = 10000; // a just-created program that never shows up stops being waited for
@@ -473,7 +475,7 @@ export class CronoEditor extends LitElement {
     const set = new Set(this._copy.targets);
     if (checked) set.add(day);
     else set.delete(day);
-    this._setTargets([...set].sort((a, b) => a - b));
+    this._setTargets(copyTargetIds(this._copy.from).filter((d) => set.has(d))); // week order, the holiday last
   }
 
   _applyCopy = () => {
@@ -582,7 +584,6 @@ export class CronoEditor extends LitElement {
         <span class="muted">${tn(this.hass, "program.rooms", rooms.length)}</span>
       </section>
       ${this._renderWeek(t, selected, rooms)}
-      ${this._placeholder(t, "editor.soon_holiday")}
       ${this._placeholder(t, "editor.soon_rooms")}
     `;
   }
@@ -608,6 +609,18 @@ export class CronoEditor extends LitElement {
         errorCount: summary.filter((e) => e.day === i).length,
       };
     });
+    {
+      const bands = getDay(draft, HOLIDAY);
+      days.push({
+        id: HOLIDAY,
+        holiday: true,
+        label: t("week.holiday_short"),
+        full: t("band.holiday"),
+        rows: mergeDay(bands, summary.some((e) => e.day === HOLIDAY) ? null : this._previews[HOLIDAY]),
+        count: bands.length,
+        errorCount: summary.filter((e) => e.day === HOLIDAY).length,
+      });
+    }
     const current = days.find((d) => d.id === this._day) ?? days[0];
     const dirty = this._dirty;
     const blocked = summary.length > 0;
@@ -638,8 +651,10 @@ export class CronoEditor extends LitElement {
         ${blocked ? this._renderErrors(t, draft, summary, language) : nothing}
         <crono-week-tabs .hass=${this.hass} .days=${days} .selected=${current.id} @crono-day-select=${this._onDaySelect}></crono-week-tabs>
         <hr class="sep" />
+        <crono-holiday .hass=${this.hass} .country=${this._state.country} .subdiv=${this._state.subdiv} .dirty=${dirty} ?compact=${current.id !== HOLIDAY}></crono-holiday>
         <crono-day
           .hass=${this.hass}
+          .holiday=${current.id === HOLIDAY}
           .label=${current.full}
           .rows=${current.rows}
           .errors=${byKey}
@@ -721,21 +736,23 @@ export class CronoEditor extends LitElement {
   _renderDialogs(t) {
     const language = languageOf(this.hass);
     const copy = this._copy;
-    const from = copy ? dayLabel(copy.from, language, "long") : "";
+    const isHoliday = copy?.from === HOLIDAY;
+    const nameOf = (d) => (d === HOLIDAY ? t("band.holiday") : dayLabel(d, language, "long"));
+    const from = copy ? nameOf(copy.from) : "";
     return html`
-      <crono-dialog ?open=${copy !== null} heading=${t("copy.title", { day: from })} @crono-close=${() => (this._copy = null)}>
+      <crono-dialog ?open=${copy !== null} heading=${isHoliday ? t("copy.title_holiday") : t("copy.title", { day: from })} @crono-close=${() => (this._copy = null)}>
         ${copy
-          ? html`<p>${t("copy.body", { day: from })}</p>
+          ? html`<p>${isHoliday ? t("copy.body_holiday") : t("copy.body", { day: from })}</p>
               <div class="quick">
-                <button class="btn" type="button" @click=${() => this._setTargets(WEEK.slice(0, 5).filter((d) => d !== copy.from))}>${t("copy.weekdays")}</button>
-                <button class="btn" type="button" @click=${() => this._setTargets([5, 6].filter((d) => d !== copy.from))}>${t("copy.weekend")}</button>
-                <button class="btn" type="button" @click=${() => this._setTargets(WEEK.filter((d) => d !== copy.from))}>${t("copy.all")}</button>
+                <button class="btn" type="button" @click=${() => this._setTargets(quickTargets("weekdays", copy.from))}>${t("copy.weekdays")}</button>
+                <button class="btn" type="button" @click=${() => this._setTargets(quickTargets("weekend", copy.from))}>${t("copy.weekend")}</button>
+                <button class="btn" type="button" @click=${() => this._setTargets(quickTargets("all", copy.from))}>${t("copy.all")}</button>
                 <button class="btn" type="button" @click=${() => this._setTargets([])}>${t("copy.none")}</button>
               </div>
               <fieldset class="checks">
                 <legend>${t("copy.days")}</legend>
-                ${WEEK.filter((d) => d !== copy.from).map(
-                  (d) => html`<label><input type="checkbox" .checked=${copy.targets.includes(d)} @change=${(e) => this._toggleTarget(d, e.target.checked)} />${dayLabel(d, language, "long")}</label>`,
+                ${copyTargetIds(copy.from).map(
+                  (d) => html`<label><input type="checkbox" .checked=${copy.targets.includes(d)} @change=${(e) => this._toggleTarget(d, e.target.checked)} />${nameOf(d)}</label>`,
                 )}
               </fieldset>`
           : nothing}
@@ -751,7 +768,7 @@ export class CronoEditor extends LitElement {
   }
 
   // PLACEHOLDERS: marked, they simulate nothing (no buttons, no fake data).
-  // Task 8 put the week in place of the first; Task 9 adds the holiday part, Task 10 the rooms.
+  // Task 8 put the week in place of the first, Task 9 the holiday part; Task 10 replaces the last one.
   _placeholder(t, textKey) {
     return html`<section class="card section">
       <div class="soon"><b>${t("editor.soon")}</b><span>${t(textKey)}</span></div>
