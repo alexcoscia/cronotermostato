@@ -4,6 +4,7 @@
 
 import { LitElement, html, css, nothing } from "../lit.js";
 import { tokens, base } from "../styles.js";
+import { syncTheme, watchTheme } from "../lib/theme.js";
 import { iconWarn, iconCheck, iconDot } from "../icons.js";
 import { createStore } from "../lib/store.js";
 import { createT, tn, languageOf } from "../lib/i18n.js";
@@ -291,8 +292,12 @@ export class CronoEditor extends LitElement {
     }
     if (!changed.has("hass") || !this.hass) return;
     this._store.setHass(this.hass);
-    this.toggleAttribute("dark", this.hass.themes?.darkMode === true);
+    syncTheme(this, this.hass);
     if (this.isConnected && !this._started) this._start();
+  }
+
+  updated(changed) {
+    if (changed.has("hass") && this.hass) watchTheme(this, this.hass, changed.get("hass"));
   }
 
   _start() {

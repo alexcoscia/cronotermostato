@@ -5,14 +5,21 @@ import { readFileSync } from "node:fs";
 // Contrast of the colour pairs defined in styles.js, computed for real (WCAG 2.x
 // relative luminance) in three situations:
 //  - "fallback": no Home Assistant theme variables, light (the fallbacks in styles.js);
-//  - "ha-light" / "ha-dark": the default light and dark themes of Home Assistant.
-// There is no "dark with fallbacks": the editor only sets `dark` when HA says its
-// theme is dark, so the HA variables are always there.
+//  - "ha-light" / "ha-dark": the default light and dark themes of Home Assistant;
+//  - "custom-dark": a dark theme that only defines the dark CSS variables and does NOT declare a
+//    dark mode (`hass.themes.darkMode` false or missing). "custom-dark" is the case behind "I cannot
+//    read the settings with my dark theme": the set of colours is chosen by lib/theme.js from the
+//    colours of the theme (text lighter than surface), not from `darkMode`.
+// There is no "dark with fallbacks": `dark` is only set when the theme colours are dark, so the HA
+// variables are always there.
 //
 // Text needs 4.5:1. Borders and graphic objects need 3:1 where that is possible
 // without losing the amber / blue / grey of the modes. Where a pair cannot reach
 // it, the state is also said with an icon and a text, never with colour alone, and
 // the exception is listed in COLOUR_ONLY_BUT_REDUNDANT with the reason.
+
+import "./dom-stub.mjs";
+import { darkFromColors, parseColor } from "../../custom_components/cronotermostato/frontend/lib/theme.js";
 
 const SRC = readFileSync(new URL("../../custom_components/cronotermostato/frontend/styles.js", import.meta.url), "utf8");
 
@@ -39,7 +46,40 @@ const HA = {
     "primary-color": "#03a9f4",
     "text-primary-color": "#ffffff",
   },
+  "custom-dark": {
+    "primary-text-color": "#e0e1dd",
+    "secondary-text-color": "#b0b8c4",
+    "primary-background-color": "#0d1b2a",
+    "secondary-background-color": "#22304a",
+    "card-background-color": "#1b263b",
+    "divider-color": "#415a77",
+    "primary-color": "#ffb703",
+    "text-primary-color": "#000000",
+  },
+  "custom-light": {
+    "primary-text-color": "#3e2723",
+    "secondary-text-color": "#6d4c41",
+    "primary-background-color": "#fff3e0",
+    "secondary-background-color": "#ffe0b2",
+    "card-background-color": "#fffaf0",
+    "divider-color": "#d7ccc8",
+    "primary-color": "#6a1b9a",
+    "text-primary-color": "#ffffff",
+  },
 };
+
+/** What lib/theme.js decides for the variables of a theme: the same code the components run. */
+function isDark(ha) {
+  const saved = globalThis.getComputedStyle;
+  globalThis.getComputedStyle = () => ({
+    getPropertyValue: (name) => ({ "--crono-text": ha["primary-text-color"], "--crono-surface": ha["card-background-color"] })[name] ?? "",
+  });
+  try {
+    return darkFromColors({});
+  } finally {
+    globalThis.getComputedStyle = saved;
+  }
+}
 
 function block(source, opener) {
   const start = source.indexOf(opener);
@@ -68,6 +108,10 @@ function parseColour(text) {
 }
 
 function resolveValue(value, ha, decls) {
+  if (!/^(#|rgb)/.test(value) && !/^var\(/.test(value)) {
+    const c = parseColor(value); // hsl, oklch...: parsed the way the browser would
+    if (c) return `rgb(${c.join(",")})`;
+  }
   const v = /^var\(\s*--crono-([\w-]+)\s*\)$/.exec(value);
   if (v) return resolveValue(decls[v[1]], ha, decls);
   const m = /^var\(\s*--([\w-]+)\s*,\s*(.+)\)$/.exec(value);
@@ -78,7 +122,7 @@ function resolveValue(value, ha, decls) {
 /** All the --crono-* colours of a situation, as [r, g, b, a]. */
 function palette(name) {
   const ha = HA[name] ?? null;
-  const decls = name === "ha-dark" ? { ...LIGHT_DECLS, ...DARK_DECLS } : LIGHT_DECLS;
+  const decls = ha && isDark(ha) ? { ...LIGHT_DECLS, ...DARK_DECLS } : LIGHT_DECLS;
   const out = {};
   for (const key of Object.keys(decls)) {
     if (!/^(text|muted|bg|surface2?|line|accent|focus|error|error-bg|warn|warn-bg|ok|ok-bg|heat|heat-bg|heat-line|cool|cool-bg|cool-line|off|off-bg|off-line|field-line)$/.test(key)) continue;
@@ -148,7 +192,8 @@ function graphicPairs() {
   return pairs;
 }
 
-for (const name of ["fallback", "ha-light", "ha-dark"]) {
+const SITUATIONS = ["fallback", "ha-light", "ha-dark", "custom-dark", "custom-light"];
+for (const name of SITUATIONS) {
   test(`text pairs reach 4.5:1 (${name})`, () => {
     const p = palette(name);
     for (const [fg, bg] of textPairs(p)) {
@@ -271,4 +316,64 @@ test("every component is responsive: a container/media query or a listed fluid l
     if (n in FLUID) assert.ok(!responsive, `${n} is listed as fluid but has container queries: drop it from FLUID`);
   }
   assert.doesNotMatch(readFileSync(dir + "../cronotermostato.js", "utf8"), /100vw(?!\s*-\s*32px)/);
+});
+
+// The decision "is the theme dark" is taken on the colours, not on `darkMode`.
+test("lib/theme.js: dark is decided from the colours of the theme", () => {
+  assert.equal(isDark(HA["ha-light"]), false);
+  assert.equal(isDark(HA["ha-dark"]), true);
+  assert.equal(isDark(HA["custom-dark"]), true); // darkMode false/missing in HA, dark colours
+  assert.equal(isDark(HA["custom-light"]), false);
+});
+
+test("a dark theme without darkMode would be unreadable with the light set of colours (the bug)", () => {
+  const ha = HA["custom-dark"];
+  const light = {};
+  for (const key of Object.keys(LIGHT_DECLS)) if (/^(text|surface|heat|heat-bg|cool|cool-bg|off|off-bg|error|error-bg|warn|warn-bg)$/.test(key)) light[key] = parseColour(resolveValue(LIGHT_DECLS[key], ha, LIGHT_DECLS));
+  const failing = [["text", "heat-bg"], ["text", "cool-bg"], ["text", "off-bg"], ["text", "warn-bg"], ["error", "surface"]].filter(([a, b]) => contrast(light[a], light[b]) < 4.5);
+  assert.ok(failing.length >= 4, `light set under a dark theme should fail, failing: ${failing.join(" ")}`);
+});
+
+test("parseColor reads hex, rgb and (through the canvas, when there is one) other formats", () => {
+  assert.deepEqual(parseColor("#1b263b"), [27, 38, 59]);
+  assert.deepEqual(parseColor("#fff"), [255, 255, 255]);
+  assert.deepEqual(parseColor("rgba(225, 225, 225, 0.12)"), [225, 225, 225]);
+  assert.equal(parseColor(""), null);
+  assert.equal(parseColor("var(--x)"), null); // no canvas in node: unreadable, not a guess
+});
+
+test("when the colours cannot be read the declared darkMode decides (and nothing throws)", () => {
+  assert.equal(darkFromColors({}), null); // no getComputedStyle in node
+  const saved = globalThis.getComputedStyle;
+  globalThis.getComputedStyle = () => ({ getPropertyValue: () => "" });
+  try {
+    assert.equal(darkFromColors({}), null);
+  } finally {
+    globalThis.getComputedStyle = saved;
+  }
+});
+
+test("the components use lib/theme.js and never decide the theme from darkMode alone", async () => {
+  const { readdirSync } = await import("node:fs");
+  const dir = new URL("../../custom_components/cronotermostato/frontend/components/", import.meta.url).pathname;
+  for (const n of readdirSync(dir)) {
+    const text = readFileSync(dir + n, "utf8");
+    assert.doesNotMatch(text, /toggleAttribute\(\s*"dark"/, `${n} sets dark by hand`);
+  }
+  for (const n of ["crono-editor.js", "crono-card.js", "crono-card-editor.js"]) {
+    const text = readFileSync(dir + n, "utf8");
+    assert.match(text, /syncTheme\(this, this\.hass\)/, n);
+    assert.match(text, /watchTheme\(this, this\.hass, changed\.get\("hass"\)\)/, n);
+  }
+});
+
+// Native controls and the browser defaults that do not follow our colours by themselves.
+test("native controls follow the set in use: color-scheme, option and placeholder colours", () => {
+  assert.equal(LIGHT_DECLS["field-line"], "#6f7a88");
+  assert.match(SRC, /color-scheme:\s*light/);
+  assert.match(block(SRC, ":host([dark])"), /color-scheme:\s*dark/);
+  assert.match(SRC, /::placeholder\s*\{[^}]*color:\s*var\(--crono-muted\)/);
+  assert.match(SRC, /option\s*\{[^}]*background:\s*var\(--crono-surface\)[^}]*color:\s*var\(--crono-text\)/);
+  const dialog = readFileSync(new URL("../../custom_components/cronotermostato/frontend/components/crono-dialog.js", import.meta.url), "utf8");
+  assert.match(dialog, /dialog\s*\{[^}]*background:\s*var\(--crono-surface\)[^}]*color:\s*var\(--crono-text\)/); // the UA gives <dialog> Canvas/CanvasText
 });

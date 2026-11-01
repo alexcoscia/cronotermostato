@@ -1,9 +1,10 @@
 // Shared styles. Colours of text, surfaces, lines and the accent come from the
 // theme of Home Assistant (CSS variables) with a fallback, so they follow any
 // theme. The colours of the modes (amber heating, blue cooling, grey off) and
-// of the statuses are our own, in two sets: the editor sets the `dark`
-// attribute on itself from `hass.themes.darkMode`. Tokens are defined by
-// `crono-editor`; the inner components inherit them.
+// of the statuses are our own, in two sets: the component sets the `dark`
+// attribute on itself (lib/theme.js) from the colours of the theme in use, not only from
+// `hass.themes.darkMode`, which a custom dark theme may leave false. Tokens are defined by
+// `crono-editor`, `cronotermostato-card` and the card editor; the inner components inherit them.
 
 import { css } from "./lit.js";
 
@@ -36,6 +37,7 @@ export const tokens = css`
     --crono-ok-bg: #d6f1e0;
     --crono-field-line: #6f7a88;
     color: var(--crono-text);
+    color-scheme: light; /* native controls (select, number arrows, scrollbars, datalist) follow the set in use */
   }
   :host([dark]) {
     --crono-error: #ffb3b3;
@@ -47,13 +49,14 @@ export const tokens = css`
     --crono-heat-line: #b9791a;
     --crono-cool: #b3cdff;
     --crono-cool-bg: #14305e;
-    --crono-cool-line: #4673c6;
+    --crono-cool-line: #5b88d8;
     --crono-off: #c4cbd5;
     --crono-off-bg: #2b3038;
-    --crono-off-line: #6b7482;
+    --crono-off-line: #8791a0;
     --crono-ok: #8be0ae;
     --crono-ok-bg: #123a24;
     --crono-field-line: #8b94a1;
+    color-scheme: dark;
   }
 `;
 
@@ -78,6 +81,14 @@ export const base = css`
     list-style: none;
     margin: 0;
     padding: 0;
+  }
+  ::placeholder {
+    color: var(--crono-muted); /* the default grey of the browser is not tied to the theme */
+    opacity: 1;
+  }
+  option {
+    background: var(--crono-surface);
+    color: var(--crono-text);
   }
   .sr {
     position: absolute;

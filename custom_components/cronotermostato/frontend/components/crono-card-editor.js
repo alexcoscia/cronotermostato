@@ -6,6 +6,7 @@
 
 import { LitElement, html, css, nothing } from "../lit.js";
 import { tokens, base, fields } from "../styles.js";
+import { syncTheme, watchTheme } from "../lib/theme.js";
 import { createT } from "../lib/i18n.js";
 import { loadState } from "../lib/api.js";
 import { climateRooms } from "../lib/climate.js";
@@ -89,7 +90,12 @@ export class CronoCardEditor extends LitElement {
   }
 
   willUpdate(changed) {
+    if (changed.has("hass") && this.hass) syncTheme(this, this.hass);
     if (changed.has("hass") && this.hass && !this._loaded && !this._loading && this._attempts < MAX_ATTEMPTS) this._loadPrograms();
+  }
+
+  updated(changed) {
+    if (changed.has("hass") && this.hass) watchTheme(this, this.hass, changed.get("hass"));
   }
 
   // One read of the programs for the dropdown; if it fails, ONE more attempt the next time `hass`

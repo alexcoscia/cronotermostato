@@ -10,6 +10,7 @@
 
 import { LitElement, html, css, nothing } from "../lit.js";
 import { tokens, base } from "../styles.js";
+import { syncTheme, watchTheme } from "../lib/theme.js";
 import { iconWarn } from "../icons.js";
 import { sharedStore } from "../lib/store.js";
 import { createT } from "../lib/i18n.js";
@@ -165,9 +166,13 @@ export class CronotermostatoCard extends LitElement {
   willUpdate(changed) {
     if (changed.has("hass") && this.hass) {
       if (this._started) this._store.setHass(this.hass);
-      this.toggleAttribute("dark", this.hass.themes?.darkMode === true);
+      syncTheme(this, this.hass);
     }
     if (changed.has("hass") || changed.has("_config")) this._syncStore();
+  }
+
+  updated(changed) {
+    if (changed.has("hass") && this.hass) watchTheme(this, this.hass, changed.get("hass"));
   }
 
   // The shared store belongs to the compact view; the editor view has its own inside `crono-editor`.
