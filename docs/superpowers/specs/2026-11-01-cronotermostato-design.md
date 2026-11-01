@@ -124,8 +124,13 @@ Tile Tessera (bozze approvate da Alex: B per il 2x2, A per il 2x1, la scritta "M
 - **Colori**: ambra quando riscalda, blu quando raffredda, colori attuali negli altri casi (come `thermo_dial` 0.3.1).
 - Le fasce automatiche si vedono anche nell'editor, con un segno che dice che sono calcolate.
 
-Editor in HA: scheda Lovelace con l'elenco dei programmi, la griglia della settimana, la parte festiva e l'assegnazione alle
-stanze (ispirata allo Scheduler già installato).
+Editor in HA: l'elenco dei programmi, la griglia della settimana, la parte festiva e l'assegnazione alle stanze (ispirata
+allo Scheduler già installato). **Deciso da Alex:** l'editor è fornito dall'integrazione stessa (i file dell'interfaccia
+stanno in `custom_components/cronotermostato/`, quindi HACS li installa insieme al resto, senza un secondo repository né
+risorse da aggiungere a mano) e l'utente **sceglie dove averlo**: come **scheda Lovelace** da mettere in una dashboard,
+come **voce nella barra laterale**, o entrambi. La scelta è nelle opzioni dell'integrazione (voce laterale sì/no, solo
+amministratori sì/no); la scheda Lovelace è sempre disponibile tra quelle selezionabili. Dettagli e API esatte di Home
+Assistant da verificare nel piano 2.
 
 ## 8. Rischi e cose da verificare presto
 
