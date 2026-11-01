@@ -320,3 +320,35 @@ def test_spring_forward_gap_band_does_not_split_equal_neighbours():
     assert _wall(slot.start) == datetime(2026, 3, 29, 1)
     assert _wall(slot.end) == datetime(2026, 3, 29, 4)
     assert slot.band.temperature == 20
+
+
+def test_no_merge_when_preset_differs():
+    week = (
+        (Band(1380, 1440, "heat", None, preset="home"),),
+        (Band(0, 60, "heat", None, preset="eco"),),
+    ) + ((),) * 5
+    tl = _timeline(Program("p", "n", week, HOLIDAY))
+    slot = tl.slot_at(_at(2026, 10, 26, 23, 30))
+    assert slot.band.preset == "home"
+    assert _wall(slot.end) == datetime(2026, 10, 27, 0)
+    assert tl.slot_after(slot).band.preset == "eco"
+
+
+def test_no_merge_when_preset_vs_none():
+    week = (
+        (Band(1380, 1440, "heat", 20, preset="home"),),
+        (Band(0, 60, "heat", 20),),
+    ) + ((),) * 5
+    tl = _timeline(Program("p", "n", week, HOLIDAY))
+    slot = tl.slot_at(_at(2026, 10, 26, 23, 30))
+    assert _wall(slot.end) == datetime(2026, 10, 27, 0)
+
+
+def test_merge_when_preset_identical_over_midnight():
+    week = (
+        (Band(1380, 1440, "heat", None, preset="home"),),
+        (Band(0, 60, "heat", None, preset="home"),),
+    ) + ((),) * 5
+    tl = _timeline(Program("p", "n", week, HOLIDAY))
+    slot = tl.slot_at(_at(2026, 10, 26, 23, 30))
+    assert _wall(slot.end) == datetime(2026, 10, 27, 1)

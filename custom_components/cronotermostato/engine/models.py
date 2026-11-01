@@ -30,6 +30,7 @@ class Band:
     mode: Mode
     temperature: float | None = None
     auto: bool = False
+    preset: str | None = None
 
 
 @dataclass(frozen=True)
@@ -71,19 +72,33 @@ def _validate_band(band: Band) -> None:
         raise ProgramError(f"Band end out of range: {band.end}")
     if band.end <= band.start:
         raise ProgramError(f"Band end must be after start: {band}")
-    if band.mode not in MODES:
-        raise ProgramError(f"Unknown mode: {band.mode!r}")
-    if band.mode == "off":
-        if band.temperature is not None:
+    validate_setting(band.mode, band.temperature, band.preset)
+
+
+def validate_setting(mode: str, temperature: Any, preset: Any) -> None:
+    """Check a (mode, temperature, preset) triple.
+
+    ``off`` takes neither temperature nor preset; ``heat``/``cool`` need at
+    least one of them (both are allowed). A preset is a non-blank string.
+    """
+    if mode not in MODES:
+        raise ProgramError(f"Unknown mode: {mode!r}")
+    if preset is not None and (not isinstance(preset, str) or not preset.strip()):
+        raise ProgramError(f"Preset must be a non-empty string: {preset!r}")
+    if mode == "off":
+        if temperature is not None:
             raise ProgramError("Mode 'off' takes no temperature")
+        if preset is not None:
+            raise ProgramError("Mode 'off' takes no preset")
         return
-    temp = band.temperature
-    if temp is None:
-        raise ProgramError(f"Mode {band.mode!r} needs a temperature")
-    if isinstance(temp, bool) or not isinstance(temp, (int, float)):
-        raise ProgramError(f"Temperature must be a number: {temp!r}")
-    if not math.isfinite(temp):
-        raise ProgramError(f"Temperature must be finite: {temp!r}")
+    if temperature is None:
+        if preset is None:
+            raise ProgramError(f"Mode {mode!r} needs a temperature or a preset")
+        return
+    if isinstance(temperature, bool) or not isinstance(temperature, (int, float)):
+        raise ProgramError(f"Temperature must be a number: {temperature!r}")
+    if not math.isfinite(temperature):
+        raise ProgramError(f"Temperature must be finite: {temperature!r}")
 
 
 def validate_bands(bands: Sequence[Band]) -> None:
@@ -103,6 +118,7 @@ def _band_to_dict(band: Band) -> dict[str, Any]:
         "mode": band.mode,
         "temperature": band.temperature,
         "auto": band.auto,
+        "preset": band.preset,
     }
 
 
@@ -118,6 +134,7 @@ def _band_from_dict(d: Mapping[str, Any]) -> Band:
             mode=d["mode"],
             temperature=temperature,
             auto=auto,
+            preset=d.get("preset"),
         )
     except (KeyError, TypeError, AttributeError) as err:
         raise ProgramError(f"Invalid band: {d!r}") from err

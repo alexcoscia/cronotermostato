@@ -78,6 +78,7 @@ def test_program_roundtrip():
         "mode": "heat",
         "temperature": 23.0,
         "auto": False,
+        "preset": None,
     }
     assert d["week"][0][1]["end"] == "24:00"
     assert program_from_dict(d) == p
@@ -117,5 +118,73 @@ def test_program_from_dict_auto_must_be_bool(bad):
 def test_program_from_dict_id_name_non_empty_strings(key, bad):
     d = program_to_dict(_program())
     d[key] = bad
+    with pytest.raises(ProgramError):
+        program_from_dict(d)
+
+
+# -- preset -----------------------------------------------------------------
+
+
+def test_band_preset_defaults_to_none():
+    assert Band(0, 60, "heat", 20).preset is None
+
+
+@pytest.mark.parametrize(
+    "band",
+    [
+        Band(0, 60, "heat", None, preset="home"),  # preset alone
+        Band(0, 60, "cool", None, preset="eco"),
+        Band(0, 60, "heat", 20, preset="home"),  # both
+        Band(0, 60, "heat", None, preset="none"),  # "none" is a valid preset
+    ],
+)
+def test_validate_accepts_preset(band):
+    validate_bands([band])
+
+
+@pytest.mark.parametrize(
+    "band",
+    [
+        Band(0, 60, "heat"),  # neither temperature nor preset
+        Band(0, 60, "cool"),
+        Band(0, 60, "off", preset="home"),  # off takes no preset
+        Band(0, 60, "off", 20, preset="home"),
+        Band(0, 60, "heat", None, preset=""),
+        Band(0, 60, "heat", None, preset="  "),
+        Band(0, 60, "heat", 20, preset=5),
+        Band(0, 60, "heat", None, preset=True),
+    ],
+)
+def test_validate_rejects_preset(band):
+    with pytest.raises(ProgramError):
+        validate_bands([band])
+
+
+def test_preset_roundtrip_and_emitted_as_none():
+    day = (Band(0, 60, "heat", None, preset="home"), Band(60, 120, "heat", 20))
+    p = Program("p", "n", (day,) * 7, ())
+    d = program_to_dict(p)
+    assert d["week"][0][0]["preset"] == "home"
+    assert d["week"][0][0]["temperature"] is None
+    assert d["week"][0][1]["preset"] is None
+    assert program_from_dict(d) == p
+
+
+def test_program_from_dict_without_preset_key():
+    """Data saved before the presets existed has no ``preset`` key."""
+    d = program_to_dict(_program())
+    for day in d["week"]:
+        for band in day:
+            del band["preset"]
+    for band in d["holiday"]:
+        del band["preset"]
+    assert program_from_dict(d) == _program()
+    assert program_from_dict(d).holiday[0].preset is None
+
+
+@pytest.mark.parametrize("bad", ["", 5, True, ["home"]])
+def test_program_from_dict_rejects_bad_preset(bad):
+    d = program_to_dict(_program())
+    d["week"][0][0]["preset"] = bad
     with pytest.raises(ProgramError):
         program_from_dict(d)

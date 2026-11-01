@@ -12,6 +12,8 @@ Design decisions:
 * Every change is saved immediately with ``Store.async_save`` (no delayed
   save), so nothing is lost on a crash and a new ``CronoStore`` on the same
   ``hass`` always reads the latest data.
+* Presets are optional everywhere: data saved before they existed has no
+  ``preset`` key and loads with ``None``.
 * Override ``until`` is stored as an ISO string in UTC and read back as an
   aware UTC datetime; compare instants, not wall-clock times.
 """
@@ -39,6 +41,7 @@ from .engine.models import (
     program_from_dict,
     program_to_dict,
     validate_bands,
+    validate_setting,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -61,6 +64,7 @@ class Override:
     mode: Mode
     temperature: float | None
     until: datetime
+    preset: str | None = None
 
 
 MAX_SLUG = 50
@@ -150,7 +154,10 @@ class CronoStore:
                 if until.tzinfo is None:
                     raise ValueError("naive datetime")
                 override = Override(
-                    raw["mode"], raw.get("temperature"), until.astimezone(UTC)
+                    raw["mode"],
+                    raw.get("temperature"),
+                    until.astimezone(UTC),
+                    raw.get("preset"),  # absent in data saved before presets
                 )
                 self._check_override(override)
             except (
@@ -175,6 +182,7 @@ class CronoStore:
                 cid: {
                     "mode": o.mode,
                     "temperature": o.temperature,
+                    "preset": o.preset,
                     "until": o.until.astimezone(UTC).isoformat(),
                 }
                 for cid, o in self.overrides.items()
@@ -304,8 +312,7 @@ class CronoStore:
     def _check_override(override: Override) -> None:
         if override.until.tzinfo is None:
             raise ProgramError("Override end must be timezone-aware")
-        # reuse band validation for mode/temperature rules
-        validate_bands([Band(0, 1, override.mode, override.temperature)])
+        validate_setting(override.mode, override.temperature, override.preset)
 
     async def async_set_override(self, climate_id: str, override: Override) -> None:
         """Set the manual override of an assigned room."""

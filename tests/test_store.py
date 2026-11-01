@@ -360,3 +360,86 @@ async def test_slug_truncated_and_still_unique(hass):
         (await store.async_create_program("a" * 100, week, ())).id for _ in range(3)
     ]
     assert ids == ["a" * 50, "a" * 50 + "_2", "a" * 50 + "_3"]
+
+
+# -- preset -----------------------------------------------------------------
+
+UNTIL = datetime(2026, 11, 2, 12, 0, tzinfo=UTC)
+
+
+async def test_preset_persist_roundtrip(hass):
+    store = await _store(hass)
+    day = (
+        Band(480, 720, "heat", None, preset="home"),
+        Band(720, 900, "heat", 21.0, preset="comfort"),
+    )
+    prog = await store.async_create_program("Casa", (day,) * 7, ())
+    await store.async_assign(ROOM, prog.id)
+    await store.async_set_override(ROOM, Override("heat", None, UNTIL, "eco"))
+    other = await _store(hass)
+    assert other.programs[prog.id].week[0] == day
+    assert other.overrides[ROOM] == Override("heat", None, UNTIL, "eco")
+
+
+async def test_override_preset_rules(hass):
+    store = await _store(hass)
+    prog = await store.async_create_program("Casa", WEEK, HOLIDAY)
+    await store.async_assign(ROOM, prog.id)
+    await store.async_set_override(ROOM, Override("heat", 20.0, UNTIL, "home"))
+    for bad in (
+        Override("heat", None, UNTIL, None),
+        Override("heat", None, UNTIL, ""),
+        Override("off", None, UNTIL, "home"),
+    ):
+        with pytest.raises(ProgramError):
+            await store.async_set_override(ROOM, bad)
+
+
+async def test_data_saved_before_presets_still_loads(hass):
+    """A file written by the previous version has no ``preset`` keys."""
+    program = _good_program()
+    for day in program["week"]:
+        for band in day:
+            del band["preset"]
+    for band in program["holiday"]:
+        del band["preset"]
+    store = await _seed(
+        hass,
+        {
+            "programs": [program],
+            "assignments": {ROOM: {"program_id": "casa", "paused": False}},
+            "overrides": {
+                ROOM: {
+                    "mode": "heat",
+                    "temperature": 21.0,
+                    "until": "2026-11-02T12:00:00+00:00",
+                }
+            },
+        },
+    )
+    assert store.programs["casa"] == Program("casa", "Casa", WEEK, HOLIDAY)
+    assert store.programs["casa"].week[0][0].preset is None
+    assert store.overrides[ROOM] == Override("heat", 21.0, UNTIL, None)
+
+
+async def test_load_discards_invalid_stored_preset(hass):
+    bad = _good_program()
+    bad["id"] = "bad"
+    bad["week"][0][0]["preset"] = ""
+    until = "2026-11-02T12:00:00+00:00"
+    store = await _seed(
+        hass,
+        {
+            "programs": [bad, _good_program()],
+            "assignments": {
+                ROOM: {"program_id": "casa"},
+                "climate.b": {"program_id": "casa"},
+            },
+            "overrides": {
+                ROOM: {"mode": "heat", "temperature": None, "until": until},
+                "climate.b": {"mode": "off", "preset": "home", "until": until},
+            },
+        },
+    )
+    assert list(store.programs) == ["casa"]
+    assert store.overrides == {}

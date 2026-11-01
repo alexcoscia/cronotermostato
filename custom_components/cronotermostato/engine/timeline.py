@@ -52,7 +52,12 @@ class _Piece:
 
 
 def _same_setting(a: Band, b: Band) -> bool:
-    return (a.mode, a.temperature, a.auto) == (b.mode, b.temperature, b.auto)
+    return (a.mode, a.temperature, a.preset, a.auto) == (
+        b.mode,
+        b.temperature,
+        b.preset,
+        b.auto,
+    )
 
 
 class Timeline:
