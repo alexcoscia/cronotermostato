@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+import hashlib
+import json
 import math
 import re
 from typing import Any, Literal
@@ -156,6 +158,18 @@ def program_to_dict(p: Program) -> dict[str, Any]:
         "week": [[_band_to_dict(b) for b in day] for day in p.week],
         "holiday": [_band_to_dict(b) for b in p.holiday],
     }
+
+
+def program_revision(p: Program) -> str:
+    """Short fingerprint of a program's content (for optimistic concurrency).
+
+    First 12 hex characters of the SHA-1 of the canonical JSON (sorted keys)
+    of ``program_to_dict``: equal programs have equal revisions.
+    """
+    canonical = json.dumps(
+        program_to_dict(p), sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    )
+    return hashlib.sha1(canonical.encode(), usedforsecurity=False).hexdigest()[:12]
 
 
 def program_from_dict(d: Mapping[str, Any]) -> Program:

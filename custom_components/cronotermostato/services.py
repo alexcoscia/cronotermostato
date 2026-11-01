@@ -35,8 +35,15 @@ from homeassistant.helpers import config_validation as cv, entity_registry as er
 
 from .const import DOMAIN
 from .controller import RoomController
-from .engine.models import MODES, DAYS_PER_WEEK, ProgramError, program_from_dict
+from .engine.models import (
+    DAYS_PER_WEEK,
+    MODES,
+    Program,
+    ProgramError,
+    program_from_dict,
+)
 from .manager import Manager
+from .store import CronoStore
 
 _BAND = vol.Schema(
     {
@@ -116,6 +123,52 @@ def _bands(week: Any = None, holiday: Any = None):
     return program.week, program.holiday
 
 
+async def async_create_program(
+    store: CronoStore, name: str, week: Any, holiday: Any
+) -> Program:
+    """Validate the raw bands and create a program (shared with the WebSocket API)."""
+    week_bands, holiday_bands = _bands(week, holiday)
+    return await store.async_create_program(name, week_bands, holiday_bands)
+
+
+async def async_update_program(
+    store: CronoStore,
+    program_id: str,
+    *,
+    name: str | None = None,
+    week: Any = None,
+    holiday: Any = None,
+) -> Program:
+    """Validate the raw bands and update a program (shared with the WebSocket API)."""
+    week_bands, holiday_bands = _bands(week, holiday)
+    return await store.async_update_program(
+        program_id,
+        name=name,
+        week=week_bands if week is not None else None,
+        holiday=holiday_bands if holiday is not None else None,
+    )
+
+
+def climate_exists(hass: HomeAssistant, climate_id: str) -> bool:
+    """Whether the climate entity has a state or a registry entry."""
+    return (
+        hass.states.get(climate_id) is not None
+        or er.async_get(hass).async_get(climate_id) is not None
+    )
+
+
+async def async_assign_room(manager: Manager, climate_id: str, program_id: str) -> None:
+    """Assign a room to a program and align the controllers (shared)."""
+    await manager.store.async_assign(climate_id, program_id)
+    await manager.async_sync()
+
+
+async def async_unassign_room(manager: Manager, climate_id: str) -> None:
+    """Remove a room's assignment and align the controllers (shared)."""
+    await manager.store.async_unassign(climate_id)
+    await manager.async_sync()
+
+
 async def _controller(manager: Manager, climate_id: str) -> RoomController:
     assigned = climate_id in manager.store.assignments
     if assigned:
@@ -132,9 +185,8 @@ def async_register_services(hass: HomeAssistant) -> None:
     async def create_program(call: ServiceCall) -> ServiceResponse:
         store = _manager(hass).store
         try:
-            week, holiday = _bands(call.data["week"], call.data["holiday"])
-            program = await store.async_create_program(
-                call.data["name"], week, holiday
+            program = await async_create_program(
+                store, call.data["name"], call.data["week"], call.data["holiday"]
             )
         except ProgramError as err:
             raise _program_error(err) from err
@@ -143,12 +195,12 @@ def async_register_services(hass: HomeAssistant) -> None:
     async def update_program(call: ServiceCall) -> None:
         store = _manager(hass).store
         try:
-            week, holiday = _bands(call.data.get("week"), call.data.get("holiday"))
-            await store.async_update_program(
+            await async_update_program(
+                store,
                 call.data["program_id"],
                 name=call.data.get("name"),
-                week=week if "week" in call.data else None,
-                holiday=holiday if "holiday" in call.data else None,
+                week=call.data.get("week"),
+                holiday=call.data.get("holiday"),
             )
         except ProgramError as err:
             raise _program_error(err) from err
@@ -163,21 +215,15 @@ def async_register_services(hass: HomeAssistant) -> None:
     async def assign(call: ServiceCall) -> None:
         manager = _manager(hass)
         climate_id = call.data["climate_entity_id"]
-        if (
-            hass.states.get(climate_id) is None
-            and er.async_get(hass).async_get(climate_id) is None
-        ):
+        if not climate_exists(hass, climate_id):
             raise _error("unknown_climate", entity_id=climate_id)
         try:
-            await manager.store.async_assign(climate_id, call.data["program_id"])
+            await async_assign_room(manager, climate_id, call.data["program_id"])
         except ProgramError as err:
             raise _program_error(err) from err
-        await manager.async_sync()
 
     async def unassign(call: ServiceCall) -> None:
-        manager = _manager(hass)
-        await manager.store.async_unassign(call.data["climate_entity_id"])
-        await manager.async_sync()
+        await async_unassign_room(_manager(hass), call.data["climate_entity_id"])
 
     async def _set_paused(call: ServiceCall, paused: bool) -> None:
         manager = _manager(hass)
