@@ -7,7 +7,9 @@ from collections.abc import Callable
 import logging
 
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 
+from .const import SIGNAL_ROOMS_CHANGED
 from .controller import RoomController
 from .engine.calendar import HolidayCalendar
 from .store import CronoStore
@@ -59,6 +61,7 @@ class Manager:
             if self._stopped:
                 return
             wanted = set(self._store.assignments)
+            changed = wanted != set(self.controllers)
             for climate_id in [c for c in self.controllers if c not in wanted]:
                 controller = self.controllers.pop(climate_id)
                 try:
@@ -74,6 +77,9 @@ class Manager:
                     await controller.async_start()
                 except Exception:  # noqa: BLE001 - one room must not block the rest
                     _LOGGER.exception("Cannot start controller of %s", climate_id)
+            if changed and not self._stopped:
+                # Entity platforms add/remove the room entities on this.
+                async_dispatcher_send(self._hass, SIGNAL_ROOMS_CHANGED)
 
     @callback
     def _store_changed(self) -> None:

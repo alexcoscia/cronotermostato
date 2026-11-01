@@ -4,12 +4,16 @@
       "user": {
         "title": "Festività",
         "description": "Scegli la nazione le cui festività selezionano il programma dei giorni festivi.",
-        "data": { "country": "Nazione" }
+        "data": {
+          "country": "Nazione"
+        }
       },
       "subdiv": {
         "title": "Regione",
         "description": "Facoltativo: scegli una regione di {country} per le festività regionali.",
-        "data": { "subdiv": "Regione" }
+        "data": {
+          "subdiv": "Regione"
+        }
       }
     },
     "error": {
@@ -25,12 +29,16 @@
       "init": {
         "title": "Festività",
         "description": "Cambia la nazione le cui festività selezionano il programma dei giorni festivi.",
-        "data": { "country": "Nazione" }
+        "data": {
+          "country": "Nazione"
+        }
       },
       "subdiv": {
         "title": "Regione",
         "description": "Facoltativo: scegli una regione di {country} per le festività regionali.",
-        "data": { "subdiv": "Regione" }
+        "data": {
+          "subdiv": "Regione"
+        }
       }
     },
     "error": {
@@ -43,6 +51,24 @@
   "exceptions": {
     "unsupported_location": {
       "message": "La nazione {country} / regione {subdiv} non è supportata dalla libreria holidays installata. Cambiala nelle opzioni dell'integrazione."
+    },
+    "room_not_ready": {
+      "message": "La stanza non è ancora pronta: nessuna fascia corrente."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "program": {
+        "name": "Programma"
+      },
+      "program_definition": {
+        "name": "Programma {name}"
+      }
+    },
+    "switch": {
+      "auto": {
+        "name": "Automatico"
+      }
     }
   }
 }

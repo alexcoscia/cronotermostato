@@ -4,12 +4,16 @@
       "user": {
         "title": "Public holidays",
         "description": "Choose the country whose public holidays select the holiday schedule.",
-        "data": { "country": "Country" }
+        "data": {
+          "country": "Country"
+        }
       },
       "subdiv": {
         "title": "Region",
         "description": "Optional: choose a region of {country} for regional holidays.",
-        "data": { "subdiv": "Region" }
+        "data": {
+          "subdiv": "Region"
+        }
       }
     },
     "error": {
@@ -25,12 +29,16 @@
       "init": {
         "title": "Public holidays",
         "description": "Change the country whose public holidays select the holiday schedule.",
-        "data": { "country": "Country" }
+        "data": {
+          "country": "Country"
+        }
       },
       "subdiv": {
         "title": "Region",
         "description": "Optional: choose a region of {country} for regional holidays.",
-        "data": { "subdiv": "Region" }
+        "data": {
+          "subdiv": "Region"
+        }
       }
     },
     "error": {
@@ -43,6 +51,24 @@
   "exceptions": {
     "unsupported_location": {
       "message": "The country {country} / region {subdiv} is not supported by the installed holidays library. Change it in the integration options."
+    },
+    "room_not_ready": {
+      "message": "The room is not ready yet: there is no current slot."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "program": {
+        "name": "Program"
+      },
+      "program_definition": {
+        "name": "Program {name}"
+      }
+    },
+    "switch": {
+      "auto": {
+        "name": "Automatic"
+      }
     }
   }
 }

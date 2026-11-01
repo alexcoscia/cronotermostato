@@ -56,19 +56,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: CronoConfigEntry) -> boo
     entry.runtime_data = CronoData(store, calendar, manager)
     try:
         await manager.async_start()
+        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     except BaseException:
         await manager.async_stop()
         raise
-    if PLATFORMS:
-        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: CronoConfigEntry) -> bool:
     """Unload the config entry and stop every controller."""
-    if PLATFORMS and not await hass.config_entries.async_unload_platforms(
-        entry, PLATFORMS
-    ):
+    if not await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
         return False
     await entry.runtime_data.manager.async_stop()
     return True
