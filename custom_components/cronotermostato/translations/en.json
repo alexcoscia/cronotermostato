@@ -1,0 +1,48 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Public holidays",
+        "description": "Choose the country whose public holidays select the holiday schedule.",
+        "data": { "country": "Country" }
+      },
+      "subdiv": {
+        "title": "Region",
+        "description": "Optional: choose a region of {country} for regional holidays.",
+        "data": { "subdiv": "Region" }
+      }
+    },
+    "error": {
+      "unsupported_country": "This country is not supported."
+    },
+    "abort": {
+      "single_instance_allowed": "Cronotermostato is already configured.",
+      "unsupported_subdiv": "This country and region combination is not supported."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Public holidays",
+        "description": "Change the country whose public holidays select the holiday schedule.",
+        "data": { "country": "Country" }
+      },
+      "subdiv": {
+        "title": "Region",
+        "description": "Optional: choose a region of {country} for regional holidays.",
+        "data": { "subdiv": "Region" }
+      }
+    },
+    "error": {
+      "unsupported_country": "This country is not supported."
+    },
+    "abort": {
+      "unsupported_subdiv": "This country and region combination is not supported."
+    }
+  },
+  "exceptions": {
+    "unsupported_location": {
+      "message": "The country {country} / region {subdiv} is not supported by the installed holidays library. Change it in the integration options."
+    }
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Festività",
+        "description": "Scegli la nazione le cui festività selezionano il programma dei giorni festivi.",
+        "data": { "country": "Nazione" }
+      },
+      "subdiv": {
+        "title": "Regione",
+        "description": "Facoltativo: scegli una regione di {country} per le festività regionali.",
+        "data": { "subdiv": "Regione" }
+      }
+    },
+    "error": {
+      "unsupported_country": "Questa nazione non è supportata."
+    },
+    "abort": {
+      "single_instance_allowed": "Cronotermostato è già configurato.",
+      "unsupported_subdiv": "Questa combinazione di nazione e regione non è supportata."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Festività",
+        "description": "Cambia la nazione le cui festività selezionano il programma dei giorni festivi.",
+        "data": { "country": "Nazione" }
+      },
+      "subdiv": {
+        "title": "Regione",
+        "description": "Facoltativo: scegli una regione di {country} per le festività regionali.",
+        "data": { "subdiv": "Regione" }
+      }
+    },
+    "error": {
+      "unsupported_country": "Questa nazione non è supportata."
+    },
+    "abort": {
+      "unsupported_subdiv": "Questa combinazione di nazione e regione non è supportata."
+    }
+  },
+  "exceptions": {
+    "unsupported_location": {
+      "message": "La nazione {country} / regione {subdiv} non è supportata dalla libreria holidays installata. Cambiala nelle opzioni dell'integrazione."
+    }
+  }
+}
