@@ -46,8 +46,8 @@ Anti-obiettivi (un risultato che sarebbe un fallimento anche se "funziona"):
 
 1. **Integrazione HA `cronotermostato`** (HACS): la logica, le entità, i servizi. Si costruisce per prima.
 2. **Editor in HA** (scheda Lovelace fornita dall'integrazione): per creare e modificare programmi da HA e dal telefono.
-3. **Tile Tessera `cronotermostato`**: vede lo stato, forza e rimette in automatico; dal pannello si modificano almeno gli
-   orari delle fasce in una tabella (vedi sezione 8).
+3. **Tile Tessera `cronotermostato`**: vede lo stato, forza e rimette in automatico; dal pannello si modificano almeno
+   orari, modo e temperatura delle fasce in una tabella (vedi sezione 8).
 
 Repository: la parte 1 e 2 stanno in un repository HACS (nome `cronotermostato`, mia scelta); la parte 3 in un repository
 plugin Tessera separato (`tessera-cronotermostato`), perché Tessera pretende la struttura del plugin alla radice. La
@@ -125,8 +125,10 @@ stanze (ispirata allo Scheduler già installato).
   mostra una **tabella delle fasce del giorno** ("fascia 1  8:00 - 12:00", "fascia 2  XX:XX - YY:YY", e così via) in cui
   si cambiano gli orari di inizio e fine di ogni fascia. Le fasce automatiche compaiono nella tabella e si ricalcolano
   quando cambiano gli orari. Resta da verificare con una prova veloce cosa permette l'API plugin (campi di inserimento,
-  liste scorrevoli); la tabella con la modifica degli orari è il minimo garantito. Modo e temperatura delle fasce si
-  possono cambiare dal pannello se il costo è ragionevole, altrimenti da HA (mia scelta).
+  liste scorrevoli). Il minimo garantito (deciso da Alex) è la tabella con **orari, modo e temperatura** di ogni fascia
+  modificabili dal pannello; tutto ciò che si può fare da HA per le fasce, il pannello lo deve poter fare almeno in
+  questa forma. Creare e cancellare programmi, assegnarli alle stanze e scegliere la nazione delle festività restano
+  operazioni di HA (mia scelta).
 - **Il tile deve leggere due entità** (il termostato e il suo sensore di programma): da verificare nell'API plugin.
   Alternativa: tile legato al sensore del programma, con l'id del termostato negli attributi.
 - **Requisiti HACS** (struttura, `manifest.json`, `hacs.json`, icone, release GitHub): da verificare sulla documentazione
