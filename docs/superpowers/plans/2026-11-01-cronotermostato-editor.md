@@ -266,7 +266,7 @@ Specifici di questo piano:
 
 **Interfaces:**
 - Produces: per il programma selezionato, elenco di tutte le stanze `climate` di HA (con area) con interruttore "assegnata a questo programma"; una stanza assegnata a un altro programma mostra quale e chiede conferma prima di spostarla (`assign` la sposta); toglierla chiede conferma e mostra che la stanza non sarà più comandata; pausa/ripresa; stato della stanza con parola chiara in italiano/inglese per ogni `status` (`ok`, `paused`, `unassigned`, `unavailable`, `unsupported_mode`, `unsupported_preset`, `out_of_range`, `missing`, `error`, `not_running`) e per qualsiasi altro valore (mostrato così com'è: lo stato è un insieme aperto, vedi `websocket_api.py`); fascia attuale ("fino alle HH:MM", anche se è un'ora del giorno dopo) e successiva; badge `manuale` con "Torna in automatico" (`resume_auto`); forzatura: modo, temperatura (limiti della stanza), preset della stanza, con avviso che dura fino a fine fascia; avvisi di compatibilità fra programma e stanza (`roomIssues`) **prima** di assegnare.
-- Nota: `out_of_range` è uno stato calcolato dal frontend o dal server? Verificare nel Task: se `RoomStatus` del server non ha `out_of_range`, mostrare l'avviso solo da `roomIssues` (lato client) e aggiungere al piano 1 un'osservazione per Alex; non inventare uno stato server.
+- Nota: `out_of_range` e `unsupported_preset` sono già `RoomStatus` del server (controller.py): l'editor li mostra come stato della stanza; `roomIssues` serve solo a avvisare **prima** di assegnare o salvare, con le stesse regole del controllore.
 
 - [ ] **Step 1: Test fallenti** (logica): testo e gravità per ogni stato, compreso uno sconosciuto; `assign` verso una stanza già assegnata altrove chiede conferma; nessun comando se l'utente annulla; `setManual` con `off` non invia temperatura né preset; temperatura fuori dai limiti della stanza bloccata nel dialogo.
 - [ ] **Step 2-4:** Implementare, Commit `"Editor: assegnazione alle stanze, pausa e forzatura"`.
@@ -348,5 +348,5 @@ Specifici di questo piano:
 7. **Conflitti fra due editor:** il piano propone `conflict` con scelta ricarica/sovrascrivi; alternativa più semplice: l'ultimo che salva vince, senza controllo.
 8. **Titolo e icona della voce laterale:** proposti "Cronotermostato" e `mdi:calendar-clock`.
 9. **Scheda Lovelace:** una sola scheda con due viste (`editor`, `rooms`), come proposto, oppure due schede distinte (`cronotermostato-editor-card` e `cronotermostato-rooms-card`).
-10. **Stato `out_of_range`:** oggi non è fra i `RoomStatus` del server (piano 1). Il piano lo mostra come avviso calcolato nel client; se Alex lo vuole come stato del server, serve una modifica al piano 1.
+10. ~~Stato `out_of_range`~~ Risolto: è già uno stato del server (limiti di temperatura dal climate); l'editor lo mostra, e avvisa in anticipo con `roomIssues`.
 11. **Nazione delle festività dall'editor:** il piano la lascia nelle opzioni dell'integrazione; alternativa: cambiarla dall'editor (richiederebbe un comando WS in più).
