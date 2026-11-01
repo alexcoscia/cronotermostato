@@ -185,7 +185,9 @@ class RoomController:
     ) -> None:
         """Force a setting until the end of the current slot."""
         if self._climate_id not in self._store.assignments:
-            raise ProgramError(f"Room not assigned: {self._climate_id!r}")
+            raise ProgramError(
+                f"Room not assigned: {self._climate_id!r}", "not_assigned"
+            )
         if mode == "off":
             temperature, preset = None, None
         validate_setting(mode, temperature, preset)

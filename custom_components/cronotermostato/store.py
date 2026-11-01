@@ -85,13 +85,15 @@ def _user_bands(bands: Sequence[Band]) -> tuple[Band, ...]:
 
 def _clean_week(week: Sequence[Sequence[Band]]) -> tuple[tuple[Band, ...], ...]:
     if len(week) != DAYS_PER_WEEK:
-        raise ProgramError(f"A program needs exactly {DAYS_PER_WEEK} days")
+        raise ProgramError(
+            f"A program needs exactly {DAYS_PER_WEEK} days", "bad_program"
+        )
     return tuple(_user_bands(day) for day in week)
 
 
 def _clean_name(name: Any) -> str:
     if not isinstance(name, str) or not name.strip():
-        raise ProgramError("Program name must be a non-empty string")
+        raise ProgramError("Program name must be a non-empty string", "bad_program")
     return name.strip()
 
 
@@ -258,7 +260,8 @@ class CronoStore:
         rooms = [c for c, a in self.assignments.items() if a.program_id == program_id]
         if rooms:
             raise ProgramError(
-                f"Program {program_id!r} is assigned to: {', '.join(sorted(rooms))}"
+                f"Program {program_id!r} is assigned to: {', '.join(sorted(rooms))}",
+                "program_in_use",
             )
         del self.programs[program_id]
         await self._async_changed()
@@ -267,7 +270,7 @@ class CronoStore:
         try:
             return self.programs[program_id]
         except KeyError:
-            raise ProgramError(f"Unknown program: {program_id!r}") from None
+            raise ProgramError(f"Unknown program: {program_id!r}", "not_found") from None
 
     # -- assignments -----------------------------------------------------
 
@@ -304,14 +307,16 @@ class CronoStore:
         try:
             return self.assignments[climate_id]
         except KeyError:
-            raise ProgramError(f"Room not assigned: {climate_id!r}") from None
+            raise ProgramError(
+                f"Room not assigned: {climate_id!r}", "not_assigned"
+            ) from None
 
     # -- overrides -------------------------------------------------------
 
     @staticmethod
     def _check_override(override: Override) -> None:
         if override.until.tzinfo is None:
-            raise ProgramError("Override end must be timezone-aware")
+            raise ProgramError("Override end must be timezone-aware", "bad_override")
         validate_setting(override.mode, override.temperature, override.preset)
 
     async def async_set_override(self, climate_id: str, override: Override) -> None:

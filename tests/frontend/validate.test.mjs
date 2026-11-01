@@ -2,18 +2,27 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { validateDay, validateProgram } from "../../custom_components/cronotermostato/frontend/lib/validate.js";
-import { buildProgram } from "./helpers.mjs";
+import { buildProgram, clientExpect } from "./helpers.mjs";
 
 const cases = JSON.parse(readFileSync(new URL("./cases.json", import.meta.url)));
 
-test("shared cases give the same outcome as the server", () => {
-  assert.ok(cases.length > 40);
+test("the shared cases are well formed", () => {
+  assert.ok(cases.length > 60);
   for (const c of cases) {
-    const errors = validateProgram(buildProgram(c));
-    const outcome = errors.length ? errors[0].code : "valid";
-    assert.equal(outcome, c.expect, c.name);
+    assert.equal("expect" in c, !("client_expect" in c), c.name);
+    assert.equal("server_expect" in c, "client_expect" in c, c.name);
   }
+  assert.equal(new Set(cases.map((c) => c.name)).size, cases.length, "duplicate case name");
 });
+
+// One test per case: each fails by itself. The outcome is "valid" or the code of
+// the FIRST error, which the server (program_from_dict) fixes in the same way.
+for (const c of cases) {
+  test(`shared case: ${c.name}`, () => {
+    const errors = validateProgram(buildProgram(c));
+    assert.equal(errors.length ? errors[0].code : "valid", clientExpect(c));
+  });
+}
 
 const band = (start, end, mode = "heat", temperature = 20, extra = {}) => ({ start, end, mode, temperature, ...extra });
 

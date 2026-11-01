@@ -446,6 +446,65 @@ async def test_save_program_discards_auto_bands(env, hass_ws_client):  # noqa: F
     assert len(prog.week[0]) == 2 and prog.holiday == ()
 
 
+async def test_save_program_overlapping_auto_band_is_discarded(env, hass_ws_client):  # noqa: F811
+    """An automatic band is computed, never saved: it cannot cause an overlap."""
+    client = await hass_ws_client(env.hass)
+    stale = [auto("00:00", "24:00"), user("08:00", "12:00", 23.0)]
+    msg = await ws(
+        client, "save_program", **save_data(week=[stale] * 7, holiday=stale)
+    )
+    assert msg["success"], msg
+    prog = env.store.programs[msg["result"]["program_id"]]
+    assert [(b.start, b.auto) for b in prog.week[0]] == [(480, False)]
+    assert [(b.start, b.auto) for b in prog.holiday] == [(480, False)]
+    # Update path too.
+    msg = await ws(
+        client, "save_program",
+        **save_data(week=[stale] * 7, program_id=msg["result"]["program_id"]),
+    )
+    assert msg["success"], msg
+
+
+async def test_save_program_auto_only_filters_bad_shapes_untouched(env, hass_ws_client):  # noqa: F811
+    """Only dict bands with auto true are dropped; the rest is still validated."""
+    client = await hass_ws_client(env.hass)
+    week = [[auto("00:00", "24:00"), "junk"]] + [[]] * 6
+    msg = await ws(client, "save_program", **save_data(week=week))
+    assert not msg["success"] and msg["error"]["code"] == "invalid_format"
+    msg = await ws(client, "save_program", **save_data(week=["x"] * 7))
+    assert not msg["success"] and msg["error"]["code"] == "invalid_format"
+    assert env.store.programs == {}
+
+
+async def test_write_errors_carry_the_detailed_code(env, hass_ws_client):  # noqa: F811
+    """invalid_format keeps its code; error.detail_code is the ProgramError code."""
+    client = await hass_ws_client(env.hass)
+    overlap = [[band("08:00", "12:00"), band("11:00", "13:00")]] * 7
+    msg = await ws(client, "save_program", **save_data(week=overlap))
+    assert msg["error"]["code"] == "invalid_format"
+    assert msg["error"]["detail_code"] == "overlap"
+    msg = await ws(client, "save_program", **save_data(name="  "))
+    assert msg["error"]["detail_code"] == "bad_program"
+    created = (await ws(client, "save_program", **save_data()))["result"]
+    await ws(client, "assign", program_id=created["program_id"], climate_entity_id=ROOM)
+    msg = await ws(client, "delete_program", program_id=created["program_id"])
+    assert msg["error"]["code"] == "invalid_format"
+    assert "detail_code" in msg["error"]
+
+
+async def test_preview_day_error_carries_the_detailed_code(hass, hass_ws_client):
+    assert await async_setup_component(hass, "http", {})
+    await async_setup(hass, {})
+    client = await hass_ws_client(hass)
+    await client.send_json_auto_id(
+        {"type": "cronotermostato/preview_day",
+         "bands": [{"start": "08:00\n", "end": "12:00", "mode": "off"}]}
+    )
+    msg = await client.receive_json()
+    assert msg["error"]["code"] == "invalid_format"
+    assert msg["error"]["detail_code"] == "bad_time"
+
+
 async def test_save_assigned_program_no_unexpected_commands(env, hass_ws_client):  # noqa: F811
     client = await hass_ws_client(env.hass)
     created = (

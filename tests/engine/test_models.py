@@ -11,6 +11,7 @@ from custom_components.cronotermostato.engine.models import (
     program_to_dict,
     text_from_minutes,
     validate_bands,
+    validate_setting,
 )
 
 
@@ -205,3 +206,56 @@ def test_revision_same_for_int_and_float_temperature():
 
     assert program_revision(prog(19)) == program_revision(prog(19.0))
     assert program_revision(prog(19)) != program_revision(prog(19.5))
+
+
+@pytest.mark.parametrize(
+    "text", ["08:00\n", "٠٨:00", " 08:00", "08:00 ", "8:00", "08:00\r\n"]
+)
+def test_minutes_from_text_is_strict(text):
+    with pytest.raises(ProgramError) as info:
+        minutes_from_text(text)
+    assert info.value.code == "bad_time"
+
+
+def test_huge_integer_temperature_is_a_program_error():
+    """math.isfinite(10**400) raises OverflowError: it must be a ProgramError."""
+    for value in (10**400, -(10**400)):
+        with pytest.raises(ProgramError) as info:
+            validate_setting("heat", value, None)
+        assert info.value.code == "bad_temperature"
+
+
+@pytest.mark.parametrize(
+    ("call", "code"),
+    [
+        (lambda: minutes_from_text("xx"), "bad_time"),
+        (lambda: text_from_minutes(2000), "bad_time"),
+        (lambda: validate_setting("eco", 20, None), "bad_mode"),
+        (lambda: validate_setting("heat", None, None), "missing_setting"),
+        (lambda: validate_setting("off", 20, None), "off_with_setting"),
+        (lambda: validate_setting("off", None, "eco"), "off_with_setting"),
+        (lambda: validate_setting("heat", "x", None), "bad_temperature"),
+        (lambda: validate_setting("heat", float("nan"), None), "bad_temperature"),
+        (lambda: validate_setting("heat", 20, " "), "bad_preset"),
+        (lambda: validate_bands([Band(600, 500, "off")]), "end_before_start"),
+        (lambda: validate_bands([Band(600, 1500, "off")]), "bad_time"),
+        (
+            lambda: validate_bands([Band(0, 600, "off"), Band(500, 700, "off")]),
+            "overlap",
+        ),
+        (lambda: program_from_dict({}), "bad_program"),
+        (lambda: program_from_dict({"id": "", "name": "n", "week": [], "holiday": []}),
+         "bad_program"),
+        (lambda: program_from_dict({"id": "a", "name": "n", "week": [], "holiday": []}),
+         "bad_program"),
+        (lambda: program_from_dict(
+            {"id": "a", "name": "n", "week": [[]] * 7, "holiday": "x"}), "bad_band"),
+        (lambda: program_from_dict(
+            {"id": "a", "name": "n", "week": [[{"start": "08:00"}]] + [[]] * 6,
+             "holiday": []}), "bad_band"),
+    ],
+)
+def test_program_error_has_a_stable_code(call, code):
+    with pytest.raises(ProgramError) as info:
+        call()
+    assert info.value.code == code

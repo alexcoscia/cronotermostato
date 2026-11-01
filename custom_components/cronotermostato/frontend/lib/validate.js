@@ -48,37 +48,45 @@ function settingErrors(band, index) {
   return [];
 }
 
-/** Errors of one band; `range` is [start, end] in minutes when the times are valid. */
+/**
+ * Errors of one band, in the order of the server (``_band_from_dict`` then
+ * ``_validate_band``), which is the order of "first error" that the shared
+ * cases fix. `parse` errors are those of reading the band (the server raises
+ * them for every band of the day before it checks any band); `check` errors
+ * come after, and `range` is [start, end] when the band is valid on its own.
+ */
 function bandErrors(band, index) {
-  if (!isObject(band)) return { errors: [error("bad_band", index, null)], range: null };
-  for (const field of ["start", "end", "mode"]) {
-    if (band[field] === undefined) return { errors: [error("bad_band", index, field)], range: null };
-  }
+  if (!isObject(band)) return { parse: [error("bad_band", index, null)], check: [], range: null };
   if (band.auto !== undefined && typeof band.auto !== "boolean") {
-    return { errors: [error("bad_band", index, "auto")], range: null };
+    return { parse: [error("bad_band", index, "auto")], check: [], range: null };
   }
-  const errors = [];
-  const start = parseTime(band.start, { asEnd: true, strict: true });
-  const end = parseTime(band.end, { asEnd: true, strict: true });
-  if (start === null || start >= MINUTES_PER_DAY) errors.push(error("bad_time", index, "start"));
-  if (end === null || end <= 0) errors.push(error("bad_time", index, "end"));
+  // start, end, mode are read in this order: a missing one is a bad band, an
+  // invalid time is a bad time, and the first problem found stops the reading.
+  const times = {};
+  for (const field of ["start", "end"]) {
+    if (band[field] === undefined) return { parse: [error("bad_band", index, field)], check: [], range: null };
+    times[field] = parseTime(band[field], { asEnd: true, strict: true });
+    if (times[field] === null) return { parse: [error("bad_time", index, field)], check: [], range: null };
+  }
+  if (band.mode === undefined) return { parse: [error("bad_band", index, "mode")], check: [], range: null };
+  const { start, end } = times;
+  const check = [];
   let range = null;
-  if (errors.length === 0) {
-    if (end <= start) errors.push(error("end_before_start", index, "end"));
-    else range = [start, end];
-  }
-  errors.push(...settingErrors(band, index));
-  return { errors, range };
+  if (start >= MINUTES_PER_DAY) check.push(error("bad_time", index, "start"));
+  else if (end <= 0) check.push(error("bad_time", index, "end"));
+  else if (end <= start) check.push(error("end_before_start", index, "end"));
+  else range = [start, end];
+  if (check.length === 0) check.push(...settingErrors(band, index));
+  return { parse: [], check, range: check.length === 0 ? range : null };
 }
 
 /** Errors of the bands of one day (an array of serialized bands). */
 export function validateDay(bands) {
   if (!Array.isArray(bands)) return [error("bad_band", null, null)];
-  const errors = [];
+  const results = bands.map((band, index) => bandErrors(band, index));
+  const errors = [...results.flatMap((r) => r.parse), ...results.flatMap((r) => r.check)];
   const ranges = [];
-  bands.forEach((band, index) => {
-    const result = bandErrors(band, index);
-    errors.push(...result.errors);
+  results.forEach((result, index) => {
     if (result.range) ranges.push({ index, start: result.range[0], end: result.range[1] });
   });
   ranges.sort((a, b) => a.start - b.start);
@@ -106,11 +114,8 @@ export function validateProgram(program) {
   } else {
     week.forEach((day, i) => errors.push(...located(validateDay(userBands(day)), "week", i)));
   }
-  if (!Array.isArray(program.holiday)) {
-    errors.push(error("bad_program", null, "holiday"));
-  } else {
-    errors.push(...located(validateDay(userBands(program.holiday)), "holiday", null));
-  }
+  // Like the server, a holiday part that is not a list is a bad band list.
+  errors.push(...located(validateDay(userBands(program.holiday)), "holiday", null));
   return errors;
 }
 

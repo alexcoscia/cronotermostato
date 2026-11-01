@@ -288,8 +288,11 @@ node --test "tests/frontend/*.test.mjs"
 The last command runs the tests of the editor's pure JavaScript logic (Node 22, no
 dependencies to install). The cases in `tests/frontend/cases.json` are shared with
 `tests/test_frontend_parity.py`, so the editor and the server validate programs the same way.
-The editor ships Lit as a single vendored file, `frontend/lit.js` (see the header for version,
-origin and checksum); there is no build step.
+The editor ships Lit as a single file, `frontend/lit.js`: a third-party bundle that we built
+ourselves from the official npm packages (Lit 3.3.3), not a ready-made file downloaded from
+somewhere; its header lists the exact packages, their integrity hashes, the build command and the
+checksum of the body, which `tests/frontend/lit.test.mjs` verifies. There is no build step in this
+repository.
 
 ## License
 

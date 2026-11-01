@@ -32,6 +32,17 @@ Design decisions:
   must treat ``status`` as an open string, not a closed set.
 * ``preview_day`` discards incoming bands with ``auto: true``: the editor may
   send back the normalized output, and automatic bands are always computed.
+* A ``ProgramError`` of a write command (and of ``preview_day``) answers
+  ``invalid_format`` with the English message of the error, as before. The
+  error object also carries ``detail_code``, the stable ``ProgramError.code``
+  (``bad_time``, ``overlap``, ``bad_program``... the same codes as the
+  editor's JavaScript validation; ``not_found``, ``program_in_use`` and
+  ``not_assigned`` for refused structural changes). ``send_error`` cannot add
+  fields, so the answer is built with ``error_message``; clients that ignore
+  ``detail_code`` see no difference.
+* ``save_program`` discards incoming bands with ``auto: true`` before
+  validating, like ``preview_day``: automatic bands are computed, never saved,
+  so a stale one cannot cause an overlap.
 * ``countries`` is large: computed once in the executor and cached.
 """
 
@@ -44,6 +55,10 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant.components import websocket_api
+from homeassistant.components.websocket_api.messages import (
+    error_message,
+    message_to_json_bytes,
+)
 from homeassistant.const import STATE_UNAVAILABLE
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
@@ -92,6 +107,25 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_assign)
     websocket_api.async_register_command(hass, ws_unassign)
     websocket_api.async_register_command(hass, ws_subscribe)
+
+
+def _send_program_error(
+    connection: websocket_api.ActiveConnection, msg: dict[str, Any], err: ProgramError
+) -> None:
+    """Answer ``invalid_format`` with the message and the detailed ``detail_code``."""
+    answer = error_message(msg["id"], ERR_INVALID_FORMAT, str(err))
+    answer["error"]["detail_code"] = err.code
+    connection.send_message(message_to_json_bytes(answer))
+
+
+def _without_auto(days: list[Any]) -> list[Any]:
+    """Drop the ``auto: true`` bands of each day; anything else is left as is."""
+    return [
+        [b for b in day if not (isinstance(b, dict) and b.get("auto") is True)]
+        if isinstance(day, list)
+        else day
+        for day in days
+    ]
 
 
 def _loaded_data(connection: websocket_api.ActiveConnection, msg: dict[str, Any]):
@@ -223,7 +257,7 @@ def ws_preview_day(
             }
         )
     except ProgramError as err:
-        connection.send_error(msg["id"], ERR_INVALID_FORMAT, str(err))
+        _send_program_error(connection, msg, err)
         return
     connection.send_result(msg["id"], {"bands": program_views(program)["week_full"][0]})
 
@@ -258,6 +292,8 @@ async def ws_save_program(
     if data is None:
         return
     store = data.store
+    week = _without_auto(msg["week"])
+    holiday = _without_auto([msg["holiday"]])[0]
     program_id = msg.get("program_id")
     if program_id is not None and not _check_program(
         connection, msg, store, program_id, msg.get("expected_revision")
@@ -266,18 +302,18 @@ async def ws_save_program(
     try:
         if program_id is None:
             program = await async_create_program(
-                store, msg["name"], msg["week"], msg["holiday"]
+                store, msg["name"], week, holiday
             )
         else:
             program = await async_update_program(
                 store,
                 program_id,
                 name=msg["name"],
-                week=msg["week"],
-                holiday=msg["holiday"],
+                week=week,
+                holiday=holiday,
             )
     except ProgramError as err:
-        connection.send_error(msg["id"], ERR_INVALID_FORMAT, str(err))
+        _send_program_error(connection, msg, err)
         return
     connection.send_result(
         msg["id"],
@@ -307,7 +343,7 @@ async def ws_delete_program(
     try:
         await data.store.async_delete_program(msg["program_id"])
     except ProgramError as err:
-        connection.send_error(msg["id"], ERR_INVALID_FORMAT, str(err))
+        _send_program_error(connection, msg, err)
         return
     connection.send_result(msg["id"])
 
@@ -343,7 +379,7 @@ async def ws_assign(
     try:
         await async_assign_room(data.manager, climate_id, msg["program_id"])
     except ProgramError as err:
-        connection.send_error(msg["id"], ERR_INVALID_FORMAT, str(err))
+        _send_program_error(connection, msg, err)
         return
     connection.send_result(msg["id"])
 

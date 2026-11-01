@@ -43,6 +43,14 @@ test("H:MM is accepted for typing, H:M and out of range are not", () => {
   assert.equal(parseTime(" 08:00"), null);
 });
 
+test("strict mode wants two digits and ASCII digits only", () => {
+  assert.equal(parseTime("7:05", { strict: true }), null);
+  assert.equal(parseTime("07:05", { strict: true }), 425);
+  assert.equal(parseTime("08:00\n", { strict: true }), null);
+  assert.equal(parseTime("\u0660\u0668:00"), null);
+  assert.equal(parseTime("08:00 "), null);
+});
+
 test("non strings give null", () => {
   for (const bad of [null, undefined, 480, {}, [], true]) {
     assert.equal(parseTime(bad), null);

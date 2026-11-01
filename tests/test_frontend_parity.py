@@ -3,7 +3,7 @@
 ``tests/frontend/cases.json`` is shared: this module runs it against
 ``program_from_dict`` and ``tests/frontend/validate.test.mjs`` runs it against
 ``frontend/lib/validate.js``. Both must give the same outcome ("valid" or the
-same error code), so the editor never accepts what the server refuses or the
+same error code, ``ProgramError.code``), so the editor never accepts what the server refuses or the
 other way round. ``serialization.json`` holds drafts and the payload the
 editor must send; the payload must be accepted by the server.
 """
@@ -25,29 +25,6 @@ _DIR = Path(__file__).parent / "frontend"
 CASES = json.loads((_DIR / "cases.json").read_text(encoding="utf-8"))
 SERIALIZATION = json.loads((_DIR / "serialization.json").read_text(encoding="utf-8"))
 
-# Server message fragment -> error code shared with lib/validate.js.
-_CODES = (
-    ("Invalid time", "bad_time"),
-    ("Band start out of range", "bad_time"),
-    ("Band end out of range", "bad_time"),
-    ("Band times must be integers", "bad_time"),
-    ("Band end must be after start", "end_before_start"),
-    ("Overlapping bands", "overlap"),
-    ("Unknown mode", "bad_mode"),
-    ("needs a temperature or a preset", "missing_setting"),
-    ("takes no temperature", "off_with_setting"),
-    ("takes no preset", "off_with_setting"),
-    ("Temperature must be", "bad_temperature"),
-    ("Preset must be", "bad_preset"),
-    ("Invalid band", "bad_band"),
-    ("'auto' must be", "bad_band"),
-    ("Bands must be a list", "bad_band"),
-    ("Invalid program", "bad_program"),
-    ("Program ", "bad_program"),
-    ("A program needs exactly", "bad_program"),
-)
-
-
 def build_program(case: dict[str, Any]) -> dict[str, Any]:
     """Same construction as ``tests/frontend/helpers.mjs``."""
     days = case.get("days", 7)
@@ -65,20 +42,33 @@ def build_program(case: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def server_expect(case: dict[str, Any]) -> str:
+    """Expected outcome of ``program_from_dict``.
+
+    ``expect`` applies to both sides. A case may declare ``server_expect`` and
+    ``client_expect`` instead when the two sides legitimately differ (only the
+    automatic bands: the editor ignores them, the model validates them; the
+    WebSocket commands discard them before validating).
+    """
+    if "expect" in case:
+        assert "server_expect" not in case and "client_expect" not in case
+        return case["expect"]
+    return case["server_expect"]
+
+
 def outcome(program: dict[str, Any]) -> str:
     try:
         program_from_dict(program)
     except ProgramError as err:
-        for fragment, code in _CODES:
-            if fragment in str(err):
-                return code
-        pytest.fail(f"Unmapped server error: {err}")
+        return err.code
     return "valid"
 
 
 def test_cases_are_present_and_cover_both_outcomes() -> None:
     assert len(CASES) > 40
-    expected = {c["expect"] for c in CASES}
+    assert all(("expect" in c) != ("server_expect" in c) for c in CASES)
+    assert all(("server_expect" in c) == ("client_expect" in c) for c in CASES)
+    expected = {server_expect(c) for c in CASES}
     assert "valid" in expected
     assert {
         "bad_time", "end_before_start", "overlap", "bad_mode", "missing_setting",
@@ -88,7 +78,7 @@ def test_cases_are_present_and_cover_both_outcomes() -> None:
 
 @pytest.mark.parametrize("case", CASES, ids=[c["name"] for c in CASES])
 def test_server_matches_shared_case(case: dict[str, Any]) -> None:
-    assert outcome(build_program(case)) == case["expect"]
+    assert outcome(build_program(case)) == server_expect(case)
 
 
 @pytest.mark.parametrize("case", SERIALIZATION, ids=[c["name"] for c in SERIALIZATION])

@@ -76,7 +76,7 @@ Specifici di questo piano:
 - L'editor parla solo con i comandi WebSocket e i servizi dell'integrazione; non legge né scrive `.storage`, non comanda `climate` direttamente (nemmeno per l'anteprima).
 - Tutto il testo che viene dai dati (nomi di programmi, nomi di stanze, preset) entra nel DOM solo come testo (template Lit con binding normali), mai come HTML: vietati `unsafeHTML`, `innerHTML` e simili (controllo in CI, Task 14).
 - Nessuna dipendenza da CDN: tutto il codice dell'editor è nella cartella dell'integrazione (HA può funzionare senza Internet).
-- Nessun file generato commitato: nessun bundle, nessuna minificazione propria (solo `lit-core.min.js` di terzi, con la sua licenza).
+- Nessun file generato commitato: nessun bundle né minificazione propri, salvo `frontend/lit.js`, bundle di terzi (Lit 3.3.3, costruito dai pacchetti npm ufficiali, con la sua licenza e il checksum verificato da un test).
 - Sul telefono: nessuna funzione solo-mouse (trascinamento obbligatorio); tutto raggiungibile con il tocco; bersagli di almeno 44 px.
 
 ## Review Focus
@@ -189,9 +189,9 @@ Specifici di questo piano:
 ### Task 5: Struttura del frontend, Lit e logica pura con test node
 
 **Files:**
-- Create: `custom_components/cronotermostato/frontend/lit.js` (copia di `lit-core.min.js` della versione 3.x scelta, con intestazione che riporta versione e URL di origine), `frontend/LICENSE-lit.txt`, `frontend/lib/time.js`, `frontend/lib/validate.js`, `frontend/lib/model.js`
-- Create: `tests/frontend/package.json` (solo `{"type": "module"}`, nessuna dipendenza), `tests/frontend/time.test.mjs`, `validate.test.mjs`, `model.test.mjs`
-- Modify: `.github/workflows/ci.yml` (job `frontend`: `node --test tests/frontend/`), `pyproject.toml` (nessuna modifica), `README.md` (solo la sezione "Development")
+- Create: `custom_components/cronotermostato/frontend/lit.js` (bundle di terzi costruito da noi dai pacchetti npm ufficiali di Lit 3.3.3 con esbuild, perché il pacchetto `lit` non distribuisce un `lit-core.min.js` autonomo; l'intestazione riporta versione, integrity dei pacchetti, `entry.js`, comando di build e il comando per verificare il checksum del corpo), `frontend/LICENSE-lit.txt`, `frontend/lib/time.js`, `frontend/lib/validate.js`, `frontend/lib/model.js`
+- Create: `tests/frontend/package.json` (solo `{"type": "module"}`, nessuna dipendenza), `tests/frontend/time.test.mjs`, `validate.test.mjs`, `model.test.mjs`, `lit.test.mjs` (checksum del corpo di `lit.js` contro quello dell'intestazione)
+- Modify: `.github/workflows/ci.yml` (job `frontend`: `node --test "tests/frontend/*.test.mjs"`, glob fra virgolette), `pyproject.toml` (nessuna modifica), `README.md` (solo la sezione "Development")
 
 **Interfaces:**
 - Produces (JS puro, senza `window`/DOM):
@@ -201,8 +201,8 @@ Specifici di questo piano:
 - Regole di parità con il server (da riprodurre con gli stessi casi del piano 1, Task 2): `24:00` rifiutato come inizio; fine <= inizio rifiutata; sovrapposizione di un minuto rifiutata; adiacente ammessa; `heat` senza temperatura né preset rifiutato; `heat` con solo preset ammesso; `off` con temperatura o preset rifiutato; `mode` sconosciuto rifiutato; temperatura non numerica rifiutata.
 
 - [ ] **Step 1: Test fallenti** con `node --test`: `time.test.mjs` (round trip, `"24:00"`, `"7:5"` rifiutato, `"25:00"`), `validate.test.mjs` (un test per ogni regola sopra; più un test di parità che legge un file di casi condiviso `tests/frontend/cases.json` e che anche un test Python `tests/test_frontend_parity.py` esegue contro `program_from_dict`, così i due lati non divergono), `model.test.mjs` (serializzazione: ciò che esce passa `program_from_dict`; `stripAuto`; nome con `<script>` conservato come testo).
-- [ ] **Step 2:** Eseguire `node --test tests/frontend/` e vedere i fallimenti.
-- [ ] **Step 3:** Scaricare Lit (versione 3.x, almeno due settimane di vita, versione fissata) in `frontend/lit.js` verificando che sia il file autonomo `lit-core.min.js` e non un file che importa da CDN; registrare nel file la versione e il checksum. Implementare i tre moduli.
+- [ ] **Step 2:** Eseguire `node --test "tests/frontend/*.test.mjs"` (glob fra virgolette, così lo espande Node e non la shell) e vedere i fallimenti.
+- [ ] **Step 3:** Costruire `frontend/lit.js` come **bundle di terzi**: installare `lit@3.3.3` (versione fissata, di almeno due settimane) ed `esbuild@0.25.0` in una cartella temporanea, creare `entry.js` (`export * from "lit"` più le direttive `classMap`, `styleMap`, `ifDefined`, `repeat`, `live`; niente `unsafeHTML`) e lanciare `esbuild entry.js --bundle --minify --format=esm --target=es2022 --legal-comments=eof`. Il file non deve importare nulla dall'esterno. Registrare nell'intestazione versione, `dist.integrity` di lit, lit-html, lit-element e @lit/reactive-element (`npm view <pacchetto>@<versione> dist.integrity`), `entry.js`, comando di build, il comando `tail -n +N lit.js | sha256sum` e il checksum del corpo; `tests/frontend/lit.test.mjs` verifica il checksum. Implementare i tre moduli.
 - [ ] **Step 4:** Eseguire: passano (`node --test` e `uv run pytest`). Commit `"Editor: Lit incluso e logica di validazione con test"`.
 
 ### Task 6: Livello dati del frontend (WebSocket, servizi, lingua, tema)
@@ -300,7 +300,7 @@ Specifici di questo piano:
 - Modify: `frontend/styles.js` e i componenti; Create: `tests/frontend/xss.test.mjs`, `tests/frontend/i18n-coverage.test.mjs`
 
 **Interfaces:**
-- Produces: solo variabili CSS di HA (`--primary-color`, `--primary-text-color`, `--secondary-text-color`, `--card-background-color`, `--divider-color`, `--error-color`, `--warning-color`, `--ha-card-border-radius`, ...) con ripiego; colori dei modi: ambra riscaldamento e blu raffrescamento come nel tile, resi con contrasto sufficiente in chiaro e scuro; verifica con tema scuro e con un tema personalizzato; `@media (max-width: 600px)` e la proprietà `narrow` del pannello; bersagli >= 44 px; `aria-label` e ruoli per tabella, dialoghi e stati; focus visibile; stato non espresso solo dal colore (icona + testo); sicurezza: nessun `unsafeHTML`/`innerHTML`/`insertAdjacentHTML`/`eval`/`new Function` nel codice (test che scandisce i file `frontend/` e fallisce se compaiono), nomi con markup mostrati letterali anche in `title`, `aria-label`, dialoghi e messaggi di errore; ogni chiave `t()` usata nel codice esiste in `it.js` ed `en.js`.
+- Produces: solo variabili CSS di HA (`--primary-color`, `--primary-text-color`, `--secondary-text-color`, `--card-background-color`, `--divider-color`, `--error-color`, `--warning-color`, `--ha-card-border-radius`, ...) con ripiego; colori dei modi: ambra riscaldamento e blu raffrescamento come nel tile, resi con contrasto sufficiente in chiaro e scuro; verifica con tema scuro e con un tema personalizzato; `@media (max-width: 600px)` e la proprietà `narrow` del pannello; bersagli >= 44 px; `aria-label` e ruoli per tabella, dialoghi e stati; focus visibile; stato non espresso solo dal colore (icona + testo); sicurezza: nessun `unsafeHTML`/`innerHTML`/`insertAdjacentHTML`/`eval`/`new Function` nel codice (test che scandisce i file `frontend/` e fallisce se compaiono; **esclude `frontend/lit.js`**, che usa `innerHTML` internamente, e per quel file verifica invece il checksum del corpo, vedi Task 5), nomi con markup mostrati letterali anche in `title`, `aria-label`, dialoghi e messaggi di errore; ogni chiave `t()` usata nel codice esiste in `it.js` ed `en.js`.
 
 - [ ] **Step 1: Test fallenti** (scansione statica, copertura chiavi, rendering a stringa dei nomi ostili: `<script>`, `"onmouseover=`, `</title>`, `${7*7}`, nome vuoto, nome di 1000 caratteri).
 - [ ] **Step 2-4:** Implementare, Commit `"Editor: tema, telefono, lingue e sicurezza del rendering"`.
@@ -351,3 +351,4 @@ Specifici di questo piano:
 10. ~~Stato `out_of_range`~~ Risolto: è già uno stato del server (limiti di temperatura dal climate); l'editor lo mostra, e avvisa in anticipo con `roomIssues`.
 11. **Nazione delle festività dall'editor:** il piano la lascia nelle opzioni dell'integrazione; alternativa: cambiarla dall'editor (richiederebbe un comando WS in più).
 12. **Fascia futura e setting corrente:** oggi modificare una fascia futura di un programma assegnato riapplica comunque il setting corrente (come `update_program`). Se Alex preferisce che una fascia futura non riapplichi nulla, serve una modifica del controller (decisione nuova, non coperta da questo piano).
+13. **Lunghezza del nome del programma (decisione nuova, di Alex):** nessun limite. Server e JS accettano nomi molto lunghi (provato con 10000 caratteri); il Task 5 non introduce alcun controllo di lunghezza e i componenti devono gestire un nome lungo (a capo o con puntini, senza rompere l'elenco). Verificato: né il design né il piano 1 fissano un massimo di 100 caratteri per id o nomi (nessuna occorrenza), quindi non c'è conflitto da riconciliare.
