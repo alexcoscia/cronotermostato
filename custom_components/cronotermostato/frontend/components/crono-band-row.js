@@ -5,7 +5,7 @@
 // half-typed time never re-sorts the list under the cursor. Everything that
 // comes from the user (preset) is bound as text.
 
-import { LitElement, html, css, nothing, live } from "../lit.js";
+import { LitElement, html, css, nothing } from "../lit.js";
 import { base, modeColors, fields } from "../styles.js";
 import { iconTrash, iconWarn, iconPlus, iconMinus, iconAuto, iconMode } from "../icons.js";
 import { createT, formatNumber } from "../lib/i18n.js";
@@ -354,12 +354,12 @@ export class CronoBandRow extends LitElement {
           <div class="grid">
             <div class="cell">
               <label for=${`${id}-start`}>${t("band.start")}</label>
-              <input class="time" id=${`${id}-start`} type="text" inputmode="numeric" autocomplete="off" placeholder="HH:MM" .value=${live(String(band.start))} aria-invalid=${has("start") ? "true" : "false"} aria-describedby=${describedby("start", hintId) ?? nothing} @change=${this._onTime("start")} />
+              <input class="time" id=${`${id}-start`} type="text" inputmode="numeric" autocomplete="off" placeholder="HH:MM" .value=${String(band.start)} aria-invalid=${has("start") ? "true" : "false"} aria-describedby=${describedby("start", hintId) ?? nothing} @change=${this._onTime("start")} />
               ${this._errorLines(t, id, "start")}
             </div>
             <div class="cell">
               <label for=${`${id}-end`}>${t("band.end")}</label>
-              <input class="time" id=${`${id}-end`} type="text" inputmode="numeric" autocomplete="off" placeholder="HH:MM" .value=${live(String(band.end))} aria-invalid=${has("end") ? "true" : "false"} aria-describedby=${describedby("end", hintId) ?? nothing} @change=${this._onTime("end")} />
+              <input class="time" id=${`${id}-end`} type="text" inputmode="numeric" autocomplete="off" placeholder="HH:MM" .value=${String(band.end)} aria-invalid=${has("end") ? "true" : "false"} aria-describedby=${describedby("end", hintId) ?? nothing} @change=${this._onTime("end")} />
               ${this._errorLines(t, id, "end")}
             </div>
             <div class="cell span2">
@@ -373,14 +373,14 @@ export class CronoBandRow extends LitElement {
               <label for=${`${id}-temp`}>${t("band.temperature")} (°C)</label>
               <div class="stepper">
                 <button type="button" ?disabled=${off} aria-label=${t("band.temp_down")} title=${t("band.temp_down")} @click=${() => this._bump(-1)}>${iconMinus()}</button>
-                <input class="num" id=${`${id}-temp`} type="number" inputmode="decimal" step=${this.step} .value=${live(off ? "" : tempValue)} placeholder=${off ? "—" : ""} ?disabled=${off} aria-invalid=${has("temperature") ? "true" : "false"} aria-describedby=${describedby("temperature") ?? nothing} @change=${this._onTemperature} />
+                <input class="num" id=${`${id}-temp`} type="number" inputmode="decimal" step=${this.step} .value=${off ? "" : tempValue} placeholder=${off ? "—" : ""} ?disabled=${off} aria-invalid=${has("temperature") ? "true" : "false"} aria-describedby=${describedby("temperature") ?? nothing} @change=${this._onTemperature} />
                 <button type="button" ?disabled=${off} aria-label=${t("band.temp_up")} title=${t("band.temp_up")} @click=${() => this._bump(1)}>${iconPlus()}</button>
               </div>
               ${this._errorLines(t, id, "temperature")}
             </div>
             <div class="cell span2">
               <label for=${`${id}-preset`}>${t("band.preset")}</label>
-              <input id=${`${id}-preset`} type="text" autocomplete="off" list=${`${id}-presets`} .value=${live(off ? "" : (band.preset ?? ""))} placeholder=${off ? "—" : ""} ?disabled=${off} aria-invalid=${has("preset") ? "true" : "false"} aria-describedby=${describedby("preset") ?? nothing} @change=${this._onPreset} />
+              <input id=${`${id}-preset`} type="text" autocomplete="off" list=${`${id}-presets`} .value=${off ? "" : (band.preset ?? "")} placeholder=${off ? "—" : ""} ?disabled=${off} aria-invalid=${has("preset") ? "true" : "false"} aria-describedby=${describedby("preset") ?? nothing} @change=${this._onPreset} />
               <datalist id=${`${id}-presets`}>${this.presets.map((p) => html`<option value=${p}></option>`)}</datalist>
               ${this._errorLines(t, id, "preset")}
               ${unknownPreset ? html`<span class="fw">${iconWarn()}<span>${t("band.preset_unknown", { preset: String(band.preset) })}</span></span>` : nothing}
