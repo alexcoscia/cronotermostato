@@ -34,7 +34,13 @@ if TYPE_CHECKING:
 
 
 def room_name(hass: HomeAssistant, climate_id: str) -> str:
-    """Name of the room: the name of its climate entity, else its object id."""
+    """Name of the room: the name of its climate entity, else its object id.
+
+    The entity registry comes first: at boot the state may not exist yet.
+    """
+    entry = er.async_get(hass).async_get(climate_id)
+    if entry is not None and (name := entry.name or entry.original_name):
+        return name
     state = hass.states.get(climate_id)
     if state is not None:
         return state.name

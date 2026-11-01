@@ -119,6 +119,15 @@ class ProgramSensor(SensorEntity):
         self._attr_translation_placeholders = {"name": self._program.name}
 
     @property
+    def name(self) -> str | None:
+        """Not cached: the name follows the renames of the program."""
+        if not self.platform_data:
+            return self._name_internal(None, {})
+        return self._name_internal(
+            self._device_class_name, self.platform_data.platform_translations
+        )
+
+    @property
     def _program(self) -> Program:
         return self._data.store.programs[self._program_id]
 

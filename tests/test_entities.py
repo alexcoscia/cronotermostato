@@ -223,6 +223,49 @@ async def test_program_sensor_follows_changes(env):
     assert attrs["holiday_full"][0]["auto"] is True
 
 
+async def test_program_sensor_name_follows_rename(env):
+    hass = env.hass
+    registry = er.async_get(hass)
+    assert hass.states.get(PROGRAM_SENSOR).attributes["friendly_name"] == "Program Casa"
+    await env.store.async_update_program(env.program.id, name="Altro")
+    await hass.async_block_till_done()
+    state = hass.states.get(PROGRAM_SENSOR)
+    assert state.attributes["friendly_name"] == "Program Altro"
+    assert registry.async_get(PROGRAM_SENSOR).original_name == "Program Altro"
+    assert hass.states.get("sensor.programma_altro") is None
+
+
+async def test_room_sensor_state_follows_program_rename(env):
+    await env.store.async_assign(ROOM, env.program.id)
+    await env.hass.async_block_till_done()
+    assert env.hass.states.get(SENSOR).state == "Casa"
+    await env.store.async_update_program(env.program.id, name="Altro")
+    await env.hass.async_block_till_done()
+    assert env.hass.states.get(SENSOR).state == "Altro"
+
+
+async def test_room_name_from_registry_when_state_missing(hass):
+    from custom_components.cronotermostato.entity import room_name
+
+    registry = er.async_get(hass)
+    registry.async_get_or_create(
+        "climate", "test", "u1", suggested_object_id="termostato_bagno",
+        original_name="Bagno",
+    )
+    assert hass.states.get("climate.termostato_bagno") is None
+    assert room_name(hass, "climate.termostato_bagno") == "Bagno"
+    registry.async_update_entity("climate.termostato_bagno", name="Bagno grande")
+    assert room_name(hass, "climate.termostato_bagno") == "Bagno grande"
+
+
+async def test_room_name_from_state_then_object_id(hass):
+    from custom_components.cronotermostato.entity import room_name
+
+    hass.states.async_set("climate.cucina", "heat", {"friendly_name": "Cucina X"})
+    assert room_name(hass, "climate.cucina") == "Cucina X"
+    assert room_name(hass, "climate.sala_da_pranzo") == "sala da pranzo"
+
+
 async def test_unrecorded():
     for cls in (ProgramSensor, RoomProgramSensor):
         assert isinstance(cls._unrecorded_attributes, frozenset)
