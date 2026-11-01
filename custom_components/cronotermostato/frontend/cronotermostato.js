@@ -93,7 +93,7 @@ export class CronotermostatoPanel extends LitElement {
         ${this.narrow ? html`<button type="button" aria-label=${t("app.menu")} @click=${this._toggleMenu}>${iconMenu()}</button>` : ""}
         <h1>${t("app.title")}</h1>
       </header>
-      <crono-editor .hass=${this.hass} .narrow=${this.narrow}></crono-editor>
+      <crono-editor .hass=${this.hass}></crono-editor>
     `;
   }
 }

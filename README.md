@@ -98,12 +98,15 @@ Colours come from the Home Assistant theme.
 Install through HACS as described above (or copy the folder) and restart Home Assistant: the card
 and the sidebar entry appear, nothing else to configure.
 
-To update, update through HACS and **restart Home Assistant**. The version of `manifest.json` is
-part of the URL of the editor files (`/cronotermostato_static/<version>/...`), so a new version
-means new URLs and the browser does not serve the old code. This is the design; it has not been
-verified on a live system. If you change the files without raising the version (for example while
-developing), the browser or the companion app may keep the old JavaScript: reload the page without
-cache (or clear the app's cache) and raise the version.
+To update, update through HACS (or copy the folder) and **restart Home Assistant**. The URL of the
+editor files is `/cronotermostato_static/<version>-<fingerprint>/...`, where the fingerprint is the
+first 8 hex digits of a sha256 over the names and contents of all the files in `frontend/`,
+computed once when Home Assistant starts. Any change to the JavaScript, with or without a new
+version in `manifest.json`, therefore gives new URLs (sub-modules included) and the browser does not
+serve the old code. The restart is still needed: the Python side and the new static path are only
+loaded at startup. This is the design; it has not been verified on a live system. If an old page
+stays open it keeps the old code until it is reloaded; if the companion app still shows old code
+after a restart, clear its frontend cache.
 
 ## Concepts
 
@@ -349,7 +352,13 @@ the two will overwrite each other.
   restrict them (see Permissions).
 - The editor has been tested with automated tests only, not yet on a live Home Assistant.
 - Only one configuration entry; one program per room.
-- No icon/brand image yet (HACS asks for `brand/icon.png`).
+- The icon is in `custom_components/cronotermostato/brand/` (`icon.png`, `icon@2x.png`). Whether it
+  satisfies the `brands` check of HACS has not been verified: that needs the CI (`hacs/action`) to
+  run, and it has not run yet.
+- The colours of errors, warnings and modes (heat, cool, off) are fixed, to guarantee the contrast
+  of the text on them; they do not follow `--error-color` / `--warning-color` of custom themes.
+  Text, surfaces, lines and the focus ring follow the theme; the primary button uses the theme's
+  accent darkened by half so white text stays readable.
 
 ## Development
 

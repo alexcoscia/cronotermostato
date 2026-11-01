@@ -213,7 +213,7 @@ export class CronotermostatoCard extends LitElement {
     return html`<div class="card ${editor ? "bare" : ""}">
       ${config.title ? html`<h2>${config.title}</h2>` : nothing}
       ${editor
-        ? html`<crono-editor .hass=${this.hass} .narrow=${this._narrow} .programId=${config.program_id}></crono-editor>`
+        ? html`<crono-editor .hass=${this.hass} .programId=${config.program_id}></crono-editor>`
         : html`<div class="body">${this._renderRooms(t)}</div>`}
     </div>`;
   }

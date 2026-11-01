@@ -1,6 +1,7 @@
 """Tests for the static files and the module URL of the editor."""
 
 import logging
+import re
 from unittest.mock import patch
 
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -24,14 +25,14 @@ from custom_components.cronotermostato.const import (
 from custom_components.cronotermostato.frontend import (
     async_module_url,
     async_register_static,
+    frontend_fingerprint,
 )
 
 
 async def _base(hass):
     assert await async_setup_component(hass, DOMAIN, {})
     await hass.async_block_till_done()
-    version = (await async_get_integration(hass, DOMAIN)).version
-    return f"{STATIC_URL_BASE}/{version}"
+    return (await async_module_url(hass)).rsplit("/", 1)[0]
 
 
 async def test_static_file_served(hass, hass_client):
@@ -81,11 +82,53 @@ async def test_static_registered_once(hass, hass_client):
     assert (await client.get(await async_module_url(hass))).status == 200
 
 
-async def test_module_url_has_version(hass):
+async def test_module_url_has_version_and_fingerprint(hass):
     version = (await async_get_integration(hass, DOMAIN)).version
-    assert await async_module_url(hass) == (
-        f"{STATIC_URL_BASE}/{version}/cronotermostato.js"
+    url = await async_module_url(hass)
+    match = re.fullmatch(
+        re.escape(f"{STATIC_URL_BASE}/{version}-") + r"[0-9a-f]{8}/cronotermostato\.js",
+        url,
     )
+    assert match, url
+    assert url == await async_module_url(hass)
+
+
+async def test_static_served_from_fingerprint_path(hass, hass_client):
+    assert await async_setup_component(hass, DOMAIN, {})
+    await hass.async_block_till_done()
+    client = await hass_client()
+    assert (await client.get(await async_module_url(hass))).status == 200
+    version = (await async_get_integration(hass, DOMAIN)).version
+    assert (
+        await client.get(f"{STATIC_URL_BASE}/{version}/cronotermostato.js")
+    ).status == 404
+
+
+def test_fingerprint_changes_with_content(tmp_path):
+    (tmp_path / "a.js").write_text("one")
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "sub" / "b.js").write_text("two")
+    first = frontend_fingerprint(tmp_path)
+    assert re.fullmatch(r"[0-9a-f]{8}", first)
+    assert frontend_fingerprint(tmp_path) == first
+    (tmp_path / "sub" / "b.js").write_text("two!")
+    assert frontend_fingerprint(tmp_path) != first
+
+
+def test_fingerprint_depends_on_names(tmp_path):
+    (tmp_path / "a.js").write_text("x")
+    first = frontend_fingerprint(tmp_path)
+    (tmp_path / "a.js").rename(tmp_path / "b.js")
+    assert frontend_fingerprint(tmp_path) != first
+
+
+def test_fingerprint_ignores_creation_order(tmp_path):
+    one, two = tmp_path / "one", tmp_path / "two"
+    for d, order in ((one, ("a.js", "z.js", "m.js")), (two, ("m.js", "a.js", "z.js"))):
+        d.mkdir()
+        for n in order:
+            (d / n).write_text(n)
+    assert frontend_fingerprint(one) == frontend_fingerprint(two)
 
 
 async def _entry(hass, **options):

@@ -81,7 +81,7 @@ function palette(name) {
   const decls = name === "ha-dark" ? { ...LIGHT_DECLS, ...DARK_DECLS } : LIGHT_DECLS;
   const out = {};
   for (const key of Object.keys(decls)) {
-    if (!/^(text|muted|bg|surface2?|line|accent|accent-fg|focus|error|error-bg|warn|warn-bg|ok|ok-bg|heat|heat-bg|heat-line|cool|cool-bg|cool-line|off|off-bg|off-line|field-line)$/.test(key)) continue;
+    if (!/^(text|muted|bg|surface2?|line|accent|focus|error|error-bg|warn|warn-bg|ok|ok-bg|heat|heat-bg|heat-line|cool|cool-bg|cool-line|off|off-bg|off-line|field-line)$/.test(key)) continue;
     out[key] = parseColour(resolveValue(decls[key], ha, decls));
   }
   return out;
@@ -180,16 +180,37 @@ test("the tints of the modes are redundant with icon and text (documented, not a
   assert.match(day, /aria-label=\$\{this\._segmentLabel/); // and the full text for assistive technology
 });
 
-// Theme-owned colours: --crono-accent / --crono-focus come from the theme of HA. HA's own default
-// primary colour (#03a9f4) is light: white text on it is 2.7:1 and the focus ring on a white card
-// 2.7:1. We do not override a colour the user chose in the theme; with our fallback (used when the
-// theme gives nothing) both pass. Recorded here so a change is noticed.
-test("theme-owned accent: passes with our fallback, known to fall short with the HA default blue", () => {
+// Primary button: white text on the accent of the theme darkened with color-mix (and, without
+// color-mix, on a fixed dark teal). Both are read from styles.js and checked against the accents
+// of the default HA themes, other realistic accents and a very dark one.
+const PRIMARY = block(SRC, "  .btn.primary {");
+const PRIMARY_MIX = /@supports[^{]*\{\s*\.btn\.primary\s*\{\s*background:\s*color-mix\(in srgb,\s*var\(--crono-accent\)\s*(\d+)%,\s*black\)/.exec(SRC);
+const hexRgb = (h) => parseColour(h).slice(0, 3);
+
+test("the primary button keeps white text on a fill that is dark enough for any accent", () => {
+  assert.match(PRIMARY, /color:\s*#ffffff/);
+  assert.ok(PRIMARY_MIX, "color-mix rule not found in styles.js");
+  const share = Number(PRIMARY_MIX[1]) / 100;
+  const white = [255, 255, 255, 1];
+  const fallbackFill = parseColour(/background:\s*(#[0-9a-f]{6})/i.exec(PRIMARY)[1]);
+  assert.ok(contrast(white, fallbackFill) >= 4.5, `fallback fill is ${contrast(white, fallbackFill).toFixed(2)}`);
+  for (const accent of ["#03a9f4", "#ff9800", "#009688", "#ffeb3b", "#1a237e", "#000000"]) {
+    const mixed = [...hexRgb(accent).map((v) => v * share), 1];
+    assert.ok(contrast(white, mixed) >= 4.5, `${accent} -> ${contrast(white, mixed).toFixed(2)}`);
+  }
+});
+
+test("the accent of HA is not used as a fill under light text", () => {
+  assert.doesNotMatch(PRIMARY, /var\(--crono-accent/);
+  assert.doesNotMatch(SRC, /color:\s*var\(--crono-accent-fg\)/);
+});
+
+// The accent and the focus ring still come from the theme (--crono-accent is text on program names,
+// the focus ring on a white card with HA's default blue is 2.7:1): we do not override a colour the
+// user chose in the theme; with our fallback both pass.
+test("theme-owned focus ring: passes with our fallback", () => {
   const f = palette("fallback");
-  assert.ok(contrast(f["accent-fg"], f.accent) >= 4.5);
   assert.ok(contrast(f.focus, f.surface) >= 3);
-  const l = palette("ha-light");
-  assert.ok(contrast(l["accent-fg"], l.accent) < 4.5, "if this starts to pass, drop the note above");
 });
 
 test("the hatch is not drawn behind text: .is-auto has no background image", () => {
@@ -237,7 +258,7 @@ const FLUID = {
   "crono-manual-dialog.js": "lives inside crono-dialog; single column form",
   "crono-holiday.js": "flex-wrap line of text and one link, min-height 44px",
   "crono-rooms.js": "a list; every crono-room-card has its own container query",
-  "crono-card.js": "its width is measured (ResizeObserver) and passed as `narrow` to the editor; the rooms view is fluid",
+  "crono-card.js": "the rooms view is fluid",
   "crono-card-editor.js": "single column form inside the HA card editor dialog",
 };
 test("every component is responsive: a container/media query or a listed fluid layout", async () => {

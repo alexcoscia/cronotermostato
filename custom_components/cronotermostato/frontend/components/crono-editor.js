@@ -51,7 +51,6 @@ const WEEK = [0, 1, 2, 3, 4, 5, 6];
 export class CronoEditor extends LitElement {
   static properties = {
     hass: { attribute: false },
-    narrow: { type: Boolean, reflect: true },
     programId: { attribute: false }, // the Lovelace card: open this program (if it exists) instead of the remembered one
     _state: { state: true },
     _selection: { state: true },
@@ -233,7 +232,6 @@ export class CronoEditor extends LitElement {
   constructor() {
     super();
     this.hass = undefined;
-    this.narrow = false;
     this.programId = null;
     this._store = createStore();
     this._state = this._store.getState();

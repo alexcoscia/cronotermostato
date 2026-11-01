@@ -16,7 +16,6 @@ export const tokens = css`
     --crono-surface2: var(--secondary-background-color, #f4f6f8);
     --crono-line: var(--divider-color, #cfd5dd);
     --crono-accent: var(--primary-color, #0f6b63);
-    --crono-accent-fg: var(--text-primary-color, #ffffff);
     --crono-radius: var(--ha-card-border-radius, 12px);
     --crono-shadow: var(--ha-card-box-shadow, 0 1px 2px rgba(20, 30, 40, 0.08));
     --crono-focus: var(--primary-color, #0f6b63);
@@ -112,11 +111,19 @@ export const base = css`
   .btn:hover {
     background: var(--crono-surface2);
   }
+  /* White text on the accent of HA is not readable with its default blue (2.6:1), so the fill is
+     the accent darkened by half (contrast.test.mjs checks it for several accents). Browsers
+     without color-mix get a fixed dark teal. */
   .btn.primary {
-    background: var(--crono-accent);
-    color: var(--crono-accent-fg);
+    background: #0f6b63;
+    color: #ffffff;
     border-color: transparent;
     font-weight: 600;
+  }
+  @supports (background: color-mix(in srgb, red 50%, black)) {
+    .btn.primary {
+      background: color-mix(in srgb, var(--crono-accent) 50%, black);
+    }
   }
   .btn.danger {
     color: var(--crono-error);

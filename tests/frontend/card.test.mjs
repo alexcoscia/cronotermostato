@@ -198,7 +198,7 @@ test("the rooms view uses the rooms component, read only, with the filter; names
   assert.doesNotMatch(text, /crono-editor/);
 });
 
-test("the editor view embeds crono-editor with hass, narrow and the program", async () => {
+test("the editor view embeds crono-editor with hass and the program", async () => {
   const hass = makeHass({ states: STATES });
   const card = await makeCard({ view: "editor", program_id: "p2" }, hass);
   const out = card.render();

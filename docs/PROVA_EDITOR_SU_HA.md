@@ -7,9 +7,11 @@
 >   prova e solo dopo un esplicito "via".
 > - **La copia in `/config/custom_components/` e il riavvio di HA li fa Alex** (o li autorizza). Chi scrive questa
 >   lista non ha accesso a HA reale e non lo ha usato.
-> - **Per provare codice nuovo va alzata la versione del manifest** (`custom_components/cronotermostato/manifest.json`),
->   altrimenti la cache serve il JavaScript vecchio: la versione e' nel percorso dei file
->   (`/cronotermostato_static/<versione>/...`). Ora la versione e' **0.1.0**; **l'aumento lo decide Alex**.
+> - **Per provare codice nuovo non serve alzare la versione**: il percorso dei file e'
+>   `/cronotermostato_static/<versione>-<impronta>/...`, dove l'impronta (8 caratteri esadecimali) e' lo sha256 di nomi e
+>   contenuti di tutti i file di `frontend/`, calcolata all'avvio di HA: se il codice cambia, l'URL cambia. **Resta
+>   il riavvio di HA** (a cura di Alex) per caricare il Python e il nuovo percorso statico. La versione del manifest
+>   (ora **0.1.0**) la alza Alex solo per le release.
 > - Lo Scheduler resta com'e' e non si tocca; la stanza di prova va tolta dallo Scheduler (o se ne disattiva solo la
 >   regola di quella stanza) per tutta la durata della prova.
 > - L'integrazione base (servizi, controllore) ha la sua lista: `docs/PROVA_SU_HA.md`. Questa copre l'editor.
@@ -148,18 +150,19 @@ Note: ______
 
 Note: ______
 
-## 10. Cache dopo un aggiornamento di versione
+## 10. Cache dopo un aggiornamento
 
-Questa prova richiede due versioni: l'aumento lo decide Alex (ora 0.1.0).
+Non serve alzare la versione: basta che cambi il contenuto di un file di `frontend/`.
 
-- [ ] Con la versione N installata e l'editor gia' aperto/caricato nel browser e nell'app, cambiare una scritta
-      visibile (es. un'etichetta in `frontend/i18n/it.js`) e alzare la versione del manifest (N+1).
+- [ ] Con l'editor gia' aperto/caricato nel browser e nell'app, cambiare una scritta visibile (es. un'etichetta in
+      `frontend/i18n/it.js`).
 - [ ] Copiare, riavviare HA (a cura di Alex), ricaricare la pagina **senza** svuotare la cache: la scritta nuova c'e'.
-- [ ] Controllare in F12 -> Rete che i file arrivino da `/cronotermostato_static/<nuova versione>/...`.
+- [ ] Controllare in F12 -> Rete che i file arrivino da `/cronotermostato_static/<versione>-<nuova impronta>/...` (l'impronta
+      e' diversa da quella di prima).
 - [ ] Ripetere nell'app companion senza svuotarne la cache. Se serve un ricarico forzato o "Cancella cache del
       frontend" nell'app, annotarlo: e' un limite da dire nel README.
-- [ ] Prova negativa (facoltativa): cambiare la scritta **senza** alzare la versione e vedere se si presenta il JS
-      vecchio, per confermare che alzare la versione serve davvero.
+- [ ] Prova negativa (facoltativa): copiare i file nuovi **senza riavviare** HA: l'URL non cambia (l'impronta si
+      calcola all'avvio) e puo' presentarsi il JS vecchio; conferma che il riavvio serve.
 
 Note: ______
 
