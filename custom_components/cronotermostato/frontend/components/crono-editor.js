@@ -579,6 +579,8 @@ export class CronoEditor extends LitElement {
           .program=${selected}
           .canEdit=${canEdit(this._state, this.hass)}
           .refresh=${() => this._store.refresh()}
+          .getState=${() => this._store.getState()}
+          .dirty=${this._dirty}
         ></crono-rooms>
       </section>
     `;

@@ -28,6 +28,12 @@ import {
   runAction,
   actionErrorMessage,
   issueGroups,
+  toggleAction,
+  availableActions,
+  toggleRoom,
+  reconcileManual,
+  stepNotice,
+  issueParams,
 } from "../../custom_components/cronotermostato/frontend/lib/rooms.js";
 import it from "../../custom_components/cronotermostato/frontend/i18n/it.js";
 import en from "../../custom_components/cronotermostato/frontend/i18n/en.js";
@@ -259,8 +265,8 @@ test("unassignRoom asks first and sends nothing on 'no'", async () => {
 });
 
 test("the removal text says that the room will no longer be controlled", () => {
-  assert.equal(tIt("room.unassign_confirm", { name: "Soggiorno" }), "Soggiorno non sarà più comandata.");
-  assert.equal(tEn("room.unassign_confirm", { name: "Soggiorno" }), "Soggiorno will no longer be controlled.");
+  assert.equal(tIt("room.unassign_confirm", { name: "Soggiorno" }), "Soggiorno non sarà più comandata. Un'eventuale forzatura in corso decade.");
+  assert.equal(tEn("room.unassign_confirm", { name: "Soggiorno" }), "Soggiorno will no longer be controlled. Any manual setting in progress ends.");
 });
 
 // ---- 6. forcing a setting ---------------------------------------------------------------------------
@@ -565,4 +571,239 @@ test("the editor uses the rooms component", () => {
 
 test("climateRooms keeps working for the rows (sanity)", () => {
   assert.equal(climateRooms({ states: STATES }).length, 3);
+});
+
+// ---- 11. review fixes: canEdit, actions per status, stale state, texts ---------------------------------
+
+const withStatus = (status, extra = {}) => ({ ...soggiorno(), status, server: { ...soggiorno().server, ...extra } });
+
+test("toggleAction: without the right to edit (or without a program) nothing can be done", () => {
+  const free = rowOf(rowsFor([]), "climate.soggiorno");
+  assert.equal(toggleAction({ canEdit: false, program: PROGRAMS[0], row: free }), null);
+  assert.equal(toggleAction({ canEdit: false, program: PROGRAMS[0], row: soggiorno() }), null);
+  assert.equal(toggleAction({ canEdit: true, program: null, row: free }), null);
+  assert.equal(toggleAction({ canEdit: true, program: PROGRAMS[0], row: free }), "assign");
+  assert.equal(toggleAction({ canEdit: true, program: PROGRAMS[0], row: soggiorno() }), "unassign");
+  assert.equal(toggleAction({ canEdit: undefined, program: PROGRAMS[0], row: free }), null, "unknown is not allowed");
+});
+
+test("the rooms component ignores the switch without canEdit and sends nothing", async () => {
+  const { CronoRooms } = await import(`${FE}/components/crono-rooms.js`);
+  const hass = makeHass({ ws: { "cronotermostato/assign": {}, "cronotermostato/unassign": {} } });
+  hass.states = STATES;
+  const c = new CronoRooms();
+  c.hass = hass;
+  c.program = PROGRAMS[0];
+  c.state = { rooms: [], programs: PROGRAMS, loading: false };
+  c.canEdit = false;
+  const free = rowOf(rowsFor([]), "climate.soggiorno");
+  c._onToggle({ detail: { row: free } });
+  c._onToggle({ detail: { row: soggiorno() } });
+  await flush();
+  await flush();
+  assert.equal(hass.wsCalls.length, 0);
+  assert.equal(c._ask, null);
+});
+
+test("the room card has no switch role without canEdit, also for an assigned room", async () => {
+  const c = await card({ canEdit: false });
+  assert.doesNotMatch(markup(c.render()), /role="switch"|crono-room-toggle/);
+  assert.match(markup((await card({ canEdit: true })).render()), /role="switch"/);
+});
+
+test("availableActions: not running and missing rooms offer no pause, force or resume, only an explanation", () => {
+  for (const status of ["not_running", "missing"]) {
+    const a = availableActions(withStatus(status));
+    assert.deepEqual({ force: a.force, pause: a.pause, resume: a.resume, auto: a.auto }, { force: false, pause: false, resume: false, auto: false }, status);
+    assert.equal(a.note, `room.${status}_note`);
+  }
+  assert.equal(availableActions(withStatus("not_running", { manual: true })).auto, false);
+  const free = availableActions({ ...soggiorno(), server: null, status: "unassigned" });
+  assert.deepEqual({ force: free.force, pause: free.pause, resume: free.resume, auto: free.auto, note: free.note }, { force: false, pause: false, resume: false, auto: false, note: null });
+  const ok = availableActions(withStatus("ok"));
+  assert.deepEqual({ force: ok.force, pause: ok.pause, resume: ok.resume, auto: ok.auto, note: ok.note }, { force: true, pause: true, resume: false, auto: false, note: null });
+  assert.equal(availableActions(withStatus("ok", { manual: true })).auto, true);
+  const paused = availableActions(withStatus("paused", { paused: true }));
+  assert.deepEqual({ force: paused.force, pause: paused.pause, resume: paused.resume }, { force: true, pause: false, resume: true });
+  for (const status of ["unavailable", "unsupported_mode", "unsupported_preset", "out_of_range", "error", "heating_up"]) assert.equal(availableActions(withStatus(status)).force, true, status);
+  assert.ok(it["room.not_running_note"] && en["room.not_running_note"] && it["room.missing_note"] && en["room.missing_note"]);
+});
+
+test("the room card of a not running or missing room has no action buttons but explains why", async () => {
+  for (const status of ["not_running", "missing"]) {
+    const c = await card();
+    c.row = { ...c.row, status, server: { ...c.row.server, manual: false } };
+    const flat = flatten(c.render());
+    assert.ok(!flat.values.some((v) => typeof v === "string" && (v.includes(it["room.force"]) || v.includes(it["room.pause"]))), status);
+    assert.doesNotMatch(markup(c.render()), /crono-room-(force|pause|resume|auto)/, status);
+    assert.ok(flat.values.includes(it[`room.${status}_note`]), status);
+    assert.match(markup(c.render()), /role="switch"/, "removing stays possible for admins");
+  }
+});
+
+// stale state: the room changes between the click and the reread
+const stateWith = (rooms) => ({ rooms, programs: PROGRAMS });
+const serverRoom = (program_id, extra = {}) => ({ climate_entity_id: "climate.soggiorno", program_id, program_name: program_id === "p1" ? "Casa" : "Estate", status: "ok", ...extra });
+const readerOf = (rooms, program = PROGRAMS[0]) => async () => ({ state: stateWith(rooms), program });
+
+test("toggleRoom: a room moved to another program while the user was looking asks with the right source program", async () => {
+  const hass = makeHass({ ws: { "cronotermostato/assign": {} } });
+  hass.states = STATES;
+  const clicked = rowOf(rowsFor([serverRoom("p2")]), "climate.soggiorno"); // the user saw p2
+  const seen = [];
+  const result = await toggleRoom(hass, { row: clicked, programId: "p1", readState: readerOf([serverRoom("p3", { program_name: "Inverno" })]), confirm: async (plan) => (seen.push(plan.fromName), true) });
+  assert.equal(result.cancelled, false);
+  assert.deepEqual(seen, ["Inverno"], "the dialog is the updated one");
+  assert.equal(hass.wsCalls.length, 1);
+});
+
+test("toggleRoom: unassign is sent only if the room is still assigned to this program, checked before and after the question", async () => {
+  const hass = makeHass({ ws: { "cronotermostato/unassign": {} } });
+  hass.states = STATES;
+  const clicked = soggiorno(); // assigned to p1
+  // moved elsewhere before the dialog
+  const before = await toggleRoom(hass, { row: clicked, programId: "p1", readState: readerOf([serverRoom("p2")]), confirm: async () => assert.fail("no question for a changed room") });
+  assert.deepEqual({ cancelled: before.cancelled, changed: before.changed }, { cancelled: true, changed: true });
+  // already removed
+  const gone = await toggleRoom(hass, { row: clicked, programId: "p1", readState: readerOf([]), confirm: async () => assert.fail("no question") });
+  assert.equal(gone.changed, true);
+  // moved while the dialog was open
+  let reads = 0;
+  const readState = async () => ({ state: stateWith([serverRoom(++reads === 1 ? "p1" : "p2")]), program: PROGRAMS[0] });
+  const during = await toggleRoom(hass, { row: clicked, programId: "p1", readState, confirm: async () => true });
+  assert.deepEqual({ cancelled: during.cancelled, changed: during.changed }, { cancelled: true, changed: true });
+  assert.equal(hass.wsCalls.length, 0, "nothing sent in any of the three cases");
+  // unchanged: sent
+  const ok = await toggleRoom(hass, { row: clicked, programId: "p1", readState: readerOf([serverRoom("p1")]), confirm: async () => true });
+  assert.equal(ok.cancelled, false);
+  assert.deepEqual(hass.wsCalls, [{ type: "cronotermostato/unassign", climate_entity_id: "climate.soggiorno" }]);
+});
+
+test("toggleRoom: assigning a room that is already here by now, or a program that vanished, is cancelled as changed", async () => {
+  const hass = makeHass({ ws: { "cronotermostato/assign": {} } });
+  hass.states = STATES;
+  const free = rowOf(rowsFor([]), "climate.soggiorno");
+  const here = await toggleRoom(hass, { row: free, programId: "p1", readState: readerOf([serverRoom("p1")]), confirm: async () => assert.fail("no") });
+  assert.equal(here.changed, true);
+  const noProgram = await toggleRoom(hass, { row: free, programId: "p1", readState: readerOf([], null), confirm: async () => assert.fail("no") });
+  assert.equal(noProgram.changed, true);
+  assert.equal(hass.wsCalls.length, 0);
+});
+
+test("toggleRoom: the dialog uses the program as just read (its issues), not the one seen at the click", async () => {
+  const hass = makeHass({ ws: { "cronotermostato/assign": {} } });
+  hass.states = STATES;
+  const free = rowOf(rowsFor([]), "climate.soggiorno");
+  let issues = null;
+  await toggleRoom(hass, { row: free, programId: "p2", readState: readerOf([], PROGRAMS[1]), confirm: async (plan) => ((issues = plan.issues.length), true) });
+  assert.ok(issues > 0);
+});
+
+test("runAction passes the value of a cancelled action to the caller", async () => {
+  const r = await runAction(createGuard(), "r", async () => ({ cancelled: true, changed: true }), { refresh: async () => {} });
+  assert.deepEqual({ status: r.status, changed: r.value.changed }, { status: "cancelled", changed: true });
+});
+
+test("reconcileManual: the dialog closes (and forgets) when the room disappears or can no longer be forced", () => {
+  const rows = rowsFor([serverRoom("p1")]);
+  const manual = { id: "climate.soggiorno", busy: false, error: null };
+  assert.deepEqual(reconcileManual(manual, rows), { manual, gone: false });
+  assert.deepEqual(reconcileManual(manual, rowsFor([])), { manual: null, gone: true });
+  assert.deepEqual(reconcileManual(manual, rowsFor([serverRoom("p1", { status: "not_running" })])), { manual: null, gone: true });
+  assert.deepEqual(reconcileManual(null, rows), { manual: null, gone: false });
+});
+
+test("the rooms component forgets a forced-setting dialog whose room vanished, and says so", async () => {
+  const { CronoRooms } = await import(`${FE}/components/crono-rooms.js`);
+  const hass = makeHass();
+  hass.states = STATES;
+  const c = new CronoRooms();
+  c.hass = hass;
+  c.program = PROGRAMS[0];
+  c.state = stateWith([serverRoom("p1")]);
+  c._manual = { id: "climate.soggiorno", busy: false, error: null };
+  c.state = stateWith([]);
+  c.willUpdate();
+  assert.equal(c._manual, null);
+  assert.ok(c._notice);
+  c.state = stateWith([serverRoom("p1")]);
+  c.willUpdate();
+  assert.equal(c._manual, null, "it does not come back");
+  // _applyManual with a vanished row
+  c._manual = { id: "climate.soggiorno", busy: false, error: null };
+  c.state = stateWith([]);
+  await c._applyManual({ detail: { form: { mode: "heat", temperature: "20", preset: "" } } });
+  assert.equal(c._manual, null);
+  assert.equal(hass.serviceCalls.length, 0);
+});
+
+test("stepNotice: a value that is not a multiple of the step of the room warns, without blocking", () => {
+  const room = { ...soggiorno().climate, step: 0.5, stepKnown: true };
+  assert.equal(stepNotice({ mode: "heat", temperature: "21,3" }, room).step, 0.5);
+  assert.equal(stepNotice({ mode: "heat", temperature: "21,5" }, room), null);
+  assert.equal(stepNotice({ mode: "heat", temperature: "21" }, room), null);
+  assert.equal(stepNotice({ mode: "heat", temperature: "20.7" }, { ...room, step: 0.1 }), null, "0.1 steps: float noise is not a warning");
+  assert.equal(stepNotice({ mode: "off", temperature: "21,3" }, room), null);
+  assert.equal(stepNotice({ mode: "heat", temperature: "" }, room), null);
+  assert.equal(stepNotice({ mode: "heat", temperature: "abc" }, room), null);
+  assert.equal(stepNotice({ mode: "heat", temperature: "21,3" }, { ...room, stepKnown: false }), null, "a step the room does not declare is not imposed");
+  assert.equal(stepNotice({ mode: "heat", temperature: "21,3" }, null), null);
+  assert.equal(validateManual({ mode: "heat", temperature: "21,3", preset: "" }, room).ok, true, "never blocks");
+  assert.equal(climateRooms({ states: STATES }).find((r) => r.id === "climate.soggiorno").stepKnown, true);
+  assert.equal(climateRooms({ states: STATES }).find((r) => r.id === "climate.camera").stepKnown, false);
+});
+
+test("the manual dialog shows the step notice in both languages", async () => {
+  const { CronoManualDialog } = await import(`${FE}/components/crono-manual-dialog.js`);
+  for (const [language, table] of [["it", it], ["en", en]]) {
+    const d = new CronoManualDialog();
+    d.hass = { language };
+    d.room = soggiorno();
+    d.open = true;
+    d.willUpdate(new Map());
+    d._form = { mode: "heat", temperature: "21,3", preset: "" };
+    const flat = flatten(d.render());
+    assert.ok(flat.values.some((v) => typeof v === "string" && v === createT({ language })("room.step_note", { step: "0,5 °C".replace(",", language === "en" ? "." : ",") })), language);
+    d._form = { mode: "heat", temperature: "21,5", preset: "" };
+    assert.ok(!flatten(d.render()).values.some((v) => typeof v === "string" && v.includes(table["room.step_note"].slice(0, 12))), language);
+  }
+});
+
+test("texts: Move, removal drops a forced setting, midnight, dirty draft note", async () => {
+  assert.equal(tIt("room.move"), "Sposta");
+  assert.equal(tEn("room.move"), "Move");
+  assert.match(tIt("room.unassign_confirm", { name: "S" }), /forzatura in corso decade/);
+  assert.match(tEn("room.unassign_confirm", { name: "S" }), /manual setting in progress ends/);
+  const zone = { now: NOW, timeZone: "Europe/Rome" };
+  assert.equal(untilText(tIt, "2026-11-02T00:00:00+01:00", zone), "fino a mezzanotte");
+  assert.equal(untilText(tEn, "2026-11-02T00:00:00+01:00", zone), "until midnight");
+  assert.equal(untilText(tIt, "2026-11-01T00:00:00+01:00", zone), "fino alle 00:00", "00:00 of today is not midnight to come");
+  assert.equal(untilText(tIt, "2026-11-02T00:30:00+01:00", zone), "fino alle 00:30 di domani");
+  assert.equal(it["room.dirty_note"], "Ci sono modifiche non salvate: gli avvisi riguardano il programma salvato.");
+  assert.ok(en["room.dirty_note"]);
+  const { CronoRooms } = await import(`${FE}/components/crono-rooms.js`);
+  const c = new CronoRooms();
+  c.hass = { language: "it", states: STATES };
+  const free = rowOf(rowsFor([]), "climate.soggiorno");
+  const ask = { kind: "assign", row: free, plan: assignPlan(free, PROGRAMS[1]) };
+  c.dirty = false;
+  assert.ok(!flatten(c._askContent(tIt, ask)).values.includes(it["room.dirty_note"]));
+  c.dirty = true;
+  assert.ok(flatten(c._askContent(tIt, ask)).values.includes(it["room.dirty_note"]));
+  // the button of a move says Move
+  const moving = { kind: "assign", row: free, plan: { ...ask.plan, moves: true, fromName: "X" } };
+  c._ask = moving;
+  assert.ok(flatten(c._renderAsk(tIt)).values.includes("Sposta"));
+  c._ask = ask;
+  assert.ok(flatten(c._renderAsk(tIt)).values.includes("Assegna"));
+});
+
+test("issue temperatures and limits are written with the number format of HA, not String()", () => {
+  const climate = { minTemp: 15, maxTemp: 25 };
+  const issue = { code: "out_of_range", temperature: 40.5, mode: "heat", preset: null };
+  const p = issueParams(tIt, issue, climate, { language: "it" });
+  assert.deepEqual([p.temperature, p.min, p.max], ["40,5", "15", "25"]);
+  assert.equal(issueParams(tEn, issue, climate, { language: "en" }).temperature, "40.5");
+  assert.equal(issueParams(tIt, { code: "unsupported_mode", mode: "cool", temperature: null, preset: null }, climate, { language: "it" }).mode, it["mode.cool"]);
+  assert.equal(issueParams(tIt, { code: "unsupported_mode", mode: "x", temperature: null, preset: null }, null, { language: "it" }).temperature, "");
 });

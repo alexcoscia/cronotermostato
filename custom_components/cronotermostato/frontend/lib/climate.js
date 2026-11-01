@@ -41,6 +41,7 @@ export function climateRooms(hass) {
         minTemp,
         maxTemp,
         step: step !== null && step > 0 ? step : DEFAULT_STEP,
+        stepKnown: step !== null && step > 0,
       };
     });
   return rooms.sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));

@@ -62,13 +62,15 @@ export function untilInfo(iso, { now = new Date(), timeZone } = {}) {
   const match = typeof iso === "string" ? ISO.exec(iso) : null;
   if (!match || Number(match[2]) > 23 || Number(match[3]) > 59) return null;
   const today = todayIn(now, timeZone);
-  return { time: `${match[2]}:${match[3]}`, nextDay: today !== null && match[1] > today };
+  const time = `${match[2]}:${match[3]}`;
+  return { time, nextDay: today !== null && match[1] > today };
 }
 
 /** "until 17:30", "until 06:30 tomorrow"; null when the text is not a time. */
 export function untilText(t, iso, options) {
   const info = untilInfo(iso, options);
   if (!info) return null;
+  if (info.nextDay && info.time === "00:00") return t("room.until_midnight");
   return t(info.nextDay ? "room.until_tomorrow" : "room.until", { time: info.time });
 }
 
@@ -195,6 +197,82 @@ export async function unassignRoom(hass, { row, confirm }) {
   return { cancelled: false };
 }
 
+/** Number of an issue as HA's language writes it; "" when there is none. */
+function numberText(hass, value) {
+  return typeof value === "number" && Number.isFinite(value) ? formatNumber(hass, value, { maximumFractionDigits: 2 }) : "";
+}
+
+/** The placeholders of the text `issue.<code>` for one grouped issue of a room. */
+export function issueParams(t, issue, climate, hass) {
+  return {
+    mode: ["heat", "cool", "off"].includes(issue.mode) ? t(`mode.${issue.mode}`) : String(issue.mode),
+    preset: String(issue.preset),
+    temperature: numberText(hass, issue.temperature),
+    min: numberText(hass, climate?.minTemp),
+    max: numberText(hass, climate?.maxTemp),
+  };
+}
+
+/** What the switch of a room does: "assign", "unassign", or null when the user may not edit or there is no program. */
+export function toggleAction({ canEdit, program, row }) {
+  if (canEdit !== true || !program || !row) return null;
+  return row.assignedHere ? "unassign" : "assign";
+}
+
+/**
+ * Which actions make sense for a room. A room the program does not run (`not_running`, `missing`)
+ * or that is not assigned has none: the server would refuse them. `note` is the key of a short
+ * explanation, or null.
+ */
+export function availableActions(row) {
+  const none = { force: false, pause: false, resume: false, auto: false, note: null };
+  const server = row?.server ?? null;
+  if (server === null) return none;
+  if (row.status === "not_running" || row.status === "missing") return { ...none, note: row.status === "missing" ? "room.missing_note" : "room.not_running_note" };
+  const paused = server.paused === true || row.status === "paused";
+  return { force: true, pause: !paused, resume: paused, auto: server.manual === true, note: null };
+}
+
+/**
+ * Switch of a room, on the state as it is NOW: the state is read again first, the row and the
+ * program are worked out again and the question (if any) shows those. Unassigning is sent only if the
+ * room is still assigned to this program, also after the question. Returns {cancelled, changed?}:
+ * `changed` when the room is no longer what the user saw (nothing is sent).
+ * `readState` returns {state: {rooms, programs}, program} after reading the server.
+ */
+export async function toggleRoom(hass, { row, programId, readState, confirm }) {
+  const find = async () => {
+    const { state, program } = await readState();
+    const now = roomRows({ hass, rooms: state?.rooms, programs: state?.programs, programId }).find((r) => r.id === row.id) ?? null;
+    return { now, program };
+  };
+  const changed = { cancelled: true, changed: true };
+  const first = await find();
+  if (!first.now || !first.program || first.now.assignedHere !== row.assignedHere) return changed;
+  if (row.assignedHere) {
+    let ok = true;
+    const result = await unassignRoom(hass, {
+      row: first.now,
+      confirm: async (r) => {
+        if (!(await confirm(r))) return false;
+        const again = await find();
+        ok = again.now !== null && again.now.assignedHere;
+        return ok;
+      },
+    });
+    return ok ? result : changed;
+  }
+  return assignRoom(hass, { row: first.now, program: first.program, confirm });
+}
+
+/** The dialog of a forced setting follows the rows: gone when its room disappeared or can no longer be forced. */
+export function reconcileManual(manual, rows) {
+  if (!manual) return { manual: null, gone: false };
+  const row = rows.find((r) => r.id === manual.id);
+  if (!row || !availableActions(row).force) return { manual: null, gone: true };
+  return { manual, gone: false };
+}
+
 // ---- Forcing a setting --------------------------------------------------------------------------------------
 
 const MODES = ["heat", "cool", "off"];
@@ -254,6 +332,19 @@ export function validateManual(form, room, format = String) {
   return { ok: true, errors, request };
 }
 
+/**
+ * {step} when a typed temperature is not a multiple of the step the room declares: the thermostat
+ * will round it. Never blocks; null when there is nothing to say (off, no number, no declared step).
+ */
+export function stepNotice(form, room) {
+  if (!room || room.stepKnown !== true || form?.mode === "off") return null;
+  const value = parseTemperature(form?.temperature);
+  const step = room.step;
+  if (value === null || !(step > 0)) return null;
+  const ratio = value / step;
+  return Math.abs(ratio - Math.round(ratio)) > 1e-6 ? { step } : null;
+}
+
 /** Force a setting until the end of the band. {invalid, errors} without calling the service when the form is wrong. */
 export async function forceRoom(hass, row, form) {
   const checked = validateManual(form, row.climate);
@@ -282,7 +373,7 @@ export async function runAction(guard, key, action, { refresh } = {}) {
     let outcome;
     try {
       const value = await action();
-      outcome = value?.cancelled === true ? { status: "cancelled" } : { status: "done", value };
+      outcome = value?.cancelled === true ? { status: "cancelled", value } : { status: "done", value };
     } catch (error) {
       outcome = { status: "error", error: toEditorError(error) };
     }

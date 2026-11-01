@@ -8,7 +8,7 @@ import { LitElement, html, css, nothing } from "../lit.js";
 import { base, modeColors } from "../styles.js";
 import { iconCheck, iconWarn, iconX, iconInfo, iconPause, iconHand, iconAuto, iconMode } from "../icons.js";
 import { createT } from "../lib/i18n.js";
-import { statusInfo, statusText, untilText, manualText, nextText, settingText } from "../lib/rooms.js";
+import { statusInfo, statusText, untilText, manualText, nextText, settingText, availableActions } from "../lib/rooms.js";
 
 const ICONS = { check: iconCheck, warn: iconWarn, x: iconX, info: iconInfo, pause: iconPause };
 
@@ -216,7 +216,7 @@ export class CronoRoomCard extends LitElement {
     const StatusIcon = ICONS[info.icon] ?? iconInfo;
     const server = row.server;
     const name = row.name;
-    const paused = server !== null && (server.paused === true || row.status === "paused");
+    const actions = availableActions(row);
     const manual = server !== null && server.manual === true;
     const slot = server?.slot ?? null;
     const until = slot ? untilText(t, slot.end, zone) : null;
@@ -259,13 +259,14 @@ export class CronoRoomCard extends LitElement {
           : nothing}
         ${this.error ? html`<p class="msg error" role="alert">${iconWarn()}<span>${this.error}</span></p>` : nothing}
         ${this.busy ? html`<span class="sr" role="status">${t("room.working")}</span>` : nothing}
-        ${server !== null
+        ${actions.note ? html`<p class="muted">${t(actions.note)}</p>` : nothing}
+        ${actions.force
           ? html`<div class="acts">
-              ${manual
+              ${actions.auto
                 ? html`<button class="btn primary" type="button" aria-disabled=${blocked} aria-label=${`${t("room.resume_auto")}: ${name}`} @click=${() => this._emit("crono-room-auto")}>${iconAuto()}${t("room.resume_auto")}</button>`
                 : nothing}
               <button class="btn" type="button" aria-disabled=${blocked} aria-label=${`${t("room.force")}: ${name}`} @click=${() => this._emit("crono-room-force")}>${iconHand()}${t("room.force")}</button>
-              ${paused
+              ${actions.resume
                 ? html`<button class="btn" type="button" aria-disabled=${blocked} aria-label=${`${t("room.resume")}: ${name}`} @click=${() => this._emit("crono-room-resume")}>${t("room.resume")}</button>`
                 : html`<button class="btn" type="button" aria-disabled=${blocked} aria-label=${`${t("room.pause")}: ${name}`} @click=${() => this._emit("crono-room-pause")}>${iconPause()}${t("room.pause")}</button>`}
             </div>`

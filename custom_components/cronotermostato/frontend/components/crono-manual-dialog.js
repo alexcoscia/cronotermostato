@@ -8,7 +8,7 @@ import { LitElement, html, css, nothing } from "../lit.js";
 import { base, fields } from "../styles.js";
 import { iconWarn } from "../icons.js";
 import { createT, formatNumber } from "../lib/i18n.js";
-import { manualModes, manualDefaults, validateManual, untilText } from "../lib/rooms.js";
+import { manualModes, manualDefaults, validateManual, untilText, stepNotice } from "../lib/rooms.js";
 import "./crono-dialog.js";
 
 const FORM_ID = "manual-form";
@@ -114,6 +114,7 @@ export class CronoManualDialog extends LitElement {
       const modeError = shown("mode");
       const until = untilText(t, row.server?.slot?.end, { now: new Date(), timeZone: this.hass?.config?.time_zone });
       const presets = climate?.presetModes ?? [];
+      const step = stepNotice(form, climate);
       body = html`
         <form id=${FORM_ID} novalidate @submit=${this._submit}>
           <label>
@@ -146,6 +147,9 @@ export class CronoManualDialog extends LitElement {
                 </label>
                 ${climate ? html`<p class="hint" id="temp-limits">${t("room.temperature_limits", { min: this._numberFormat(climate.minTemp), max: this._numberFormat(climate.maxTemp) })}</p>` : html`<span id="temp-limits"></span>`}
                 ${temperatureError ? html`<p class="fe" id="temp-err" role="alert">${iconWarn()}<span>${this._errorText(t, temperatureError)}</span></p>` : nothing}
+                ${step
+                  ? html`<p class="msg warn" role="note">${iconWarn()}<span>${t("room.step_note", { step: `${this._numberFormat(step.step)} ${this.hass?.config?.unit_system?.temperature ?? "°C"}` })}</span></p>`
+                  : nothing}
                 ${presets.length > 0
                   ? html`<label>
                       ${t("band.preset")}

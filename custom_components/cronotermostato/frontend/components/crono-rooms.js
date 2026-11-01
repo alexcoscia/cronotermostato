@@ -10,7 +10,7 @@ import { iconWarn } from "../icons.js";
 import { createT, languageOf } from "../lib/i18n.js";
 import { pauseRoom, resumeRoom, resumeAuto } from "../lib/api.js";
 import { dayLabel, HOLIDAY } from "../lib/day-editing.js";
-import { roomRows, assignRoom, unassignRoom, forceRoom, createGuard, runAction, actionErrorMessage } from "../lib/rooms.js";
+import { roomRows, toggleAction, toggleRoom, availableActions, reconcileManual, issueParams, forceRoom, createGuard, runAction, actionErrorMessage } from "../lib/rooms.js";
 import "./crono-room-card.js";
 import "./crono-manual-dialog.js";
 import "./crono-dialog.js";
@@ -22,6 +22,9 @@ export class CronoRooms extends LitElement {
     program: { attribute: false }, // the selected program, as the server sent it
     canEdit: { type: Boolean },
     refresh: { attribute: false }, // () => Promise: read the state again
+    getState: { attribute: false }, // () => the state of the store as it is now (after `refresh`)
+    dirty: { type: Boolean }, // the draft of the program has unsaved changes
+    _notice: { state: true },
     _busy: { state: true },
     _errors: { state: true },
     _ask: { state: true },
@@ -77,6 +80,9 @@ export class CronoRooms extends LitElement {
     this.program = null;
     this.canEdit = false;
     this.refresh = async () => {};
+    this.getState = () => this.state;
+    this.dirty = false;
+    this._notice = null;
     this._guard = createGuard();
     this._busy = {};
     this._errors = {};
@@ -137,14 +143,29 @@ export class CronoRooms extends LitElement {
     ask.resolve(yes);
   }
 
-  _onToggle = (event) => {
+  /** The state after reading the server again, with the program as it is now. */
+  _readState = async (programId) => {
+    await this.refresh();
+    const state = this.getState() ?? this.state;
+    const program = (Array.isArray(state?.programs) ? state.programs : []).find((p) => (p.program_id ?? p.id) === programId) ?? null;
+    return { state, program };
+  };
+
+  _onToggle = async (event) => {
     const { row } = event.detail;
-    if (!this.canEdit || !this.program) return;
-    if (row.assignedHere) {
-      this._act(row, () => unassignRoom(this.hass, { row, confirm: () => this._askUser({ kind: "unassign", row, plan: null }) }));
-    } else {
-      this._act(row, () => assignRoom(this.hass, { row, program: this.program, confirm: (plan) => this._askUser({ kind: "assign", row, plan }) }));
-    }
+    const action = toggleAction({ canEdit: this.canEdit, program: this.program, row });
+    if (action === null) return;
+    const programId = this._programId;
+    this._notice = null;
+    const result = await this._act(row, () =>
+      toggleRoom(this.hass, {
+        row,
+        programId,
+        readState: () => this._readState(programId),
+        confirm: (arg) => this._askUser(action === "unassign" ? { kind: "unassign", row: arg, plan: null } : { kind: "assign", row: arg.row ?? row, plan: arg }),
+      }),
+    );
+    if (result.status === "cancelled" && result.value?.changed === true) this._notice = this._t("room.changed");
   };
 
   // ---- Pause, resume, back to automatic ---------------------------------------------------------------
@@ -166,7 +187,18 @@ export class CronoRooms extends LitElement {
 
   // ---- Forcing ----------------------------------------------------------------------------------------------
 
+  willUpdate() {
+    if (!this._manual) return;
+    const { manual, gone } = reconcileManual(this._manual, this._rows());
+    if (gone) {
+      this._manual = manual;
+      this._notice = this._t("room.changed");
+    }
+  }
+
   _onForce = (event) => {
+    if (!availableActions(event.detail.row).force) return;
+    this._notice = null;
     this._manual = { id: event.detail.row.id, busy: false, error: null };
   };
 
@@ -177,12 +209,19 @@ export class CronoRooms extends LitElement {
 
   _applyManual = async (event) => {
     const manual = this._manual;
-    const row = this._rows().find((r) => r.id === manual?.id);
-    if (!manual || !row || this._guard.has(row.id)) return;
+    if (!manual) return;
+    const row = this._rows().find((r) => r.id === manual.id);
+    if (!row || !availableActions(row).force) {
+      this._manual = null;
+      this._notice = this._t("room.changed");
+      return;
+    }
+    if (this._guard.has(row.id)) return;
     this._manual = { ...manual, busy: true, error: null };
     this._setBusy(row.id, true);
     const result = await runAction(this._guard, row.id, () => forceRoom(this.hass, row, event.detail.form), { refresh: this.refresh });
     this._setBusy(row.id, false);
+    if (!this._manual) return; // the room disappeared meanwhile: willUpdate closed the dialog
     if (result.status === "error") this._manual = { ...this._manual, busy: false, error: actionErrorMessage(this._t, result.error) };
     else if (result.status === "done" && result.value?.invalid) this._manual = { ...this._manual, busy: false };
     else this._manual = null;
@@ -198,6 +237,7 @@ export class CronoRooms extends LitElement {
     return html`
       <h3 id="rooms-title">${t("room.title")}</h3>
       <p class="muted">${this.canEdit ? t("room.hint") : t("room.read_only")}</p>
+      ${this._notice ? html`<p class="msg warn" role="status">${iconWarn()}<span>${this._notice}</span></p>` : nothing}
       ${loading
         ? html`<p class="msg" role="status">${t("common.loading")}</p>`
         : rows.length === 0
@@ -243,7 +283,7 @@ export class CronoRooms extends LitElement {
       <button slot="actions" class="btn" type="button" @click=${() => this._answer(false)}>${t("common.cancel")}</button>
       ${ask?.kind === "unassign"
         ? html`<button slot="actions" class="btn danger" type="button" @click=${() => this._answer(true)}>${t("room.unassign")}</button>`
-        : html`<button slot="actions" class="btn primary" type="button" @click=${() => this._answer(true)}>${t("room.assign")}</button>`}
+        : html`<button slot="actions" class="btn primary" type="button" @click=${() => this._answer(true)}>${ask?.plan?.moves ? t("room.move") : t("room.assign")}</button>`}
     </crono-dialog>`;
   }
 
@@ -261,19 +301,14 @@ export class CronoRooms extends LitElement {
               <span>${t("room.issues_note")}</span>
               <ul class="issues">
                 ${ask.plan.issues.map((issue) => {
-                  const params = {
-                    mode: ["heat", "cool", "off"].includes(issue.mode) ? t(`mode.${issue.mode}`) : String(issue.mode),
-                    preset: String(issue.preset),
-                    temperature: String(issue.temperature),
-                    min: String(climate?.minTemp ?? ""),
-                    max: String(climate?.maxTemp ?? ""),
-                  };
+                  const params = issueParams(t, issue, climate, this.hass);
                   return html`<li>${t("editor.room_warning_days", { text: t(`issue.${issue.code}`, params), days: issue.days.map(dayName).join(", ") })}</li>`;
                 })}
               </ul>
             </span>
           </div>`
         : nothing}
+      ${this.dirty ? html`<p class="muted">${t("room.dirty_note")}</p>` : nothing}
     `;
   }
 }
