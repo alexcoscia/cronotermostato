@@ -226,6 +226,21 @@ test("the link: a plain left click navigates inside HA, modified clicks and unsa
   assert.equal(shouldHandleClick(click(), true), false, "unsaved edits: a new tab, so they are not lost");
 });
 
+test("the link: every button other than the primary one (middle, right, back, forward, none) is left to the browser", () => {
+  const click = (extra = {}) => ({ button: 0, metaKey: false, ctrlKey: false, shiftKey: false, altKey: false, defaultPrevented: false, ...extra });
+  for (const button of [1, 2, 3, 4, -1, undefined, null, "0"]) assert.equal(shouldHandleClick(click({ button }), false), false, String(button));
+  assert.equal(shouldHandleClick(click({ defaultPrevented: true }), false), false);
+});
+
+test("the copy texts name the destinations, not only days (the holiday part is one of them)", () => {
+  assert.equal(it["copy.all"], "Tutti gli altri giorni");
+  assert.equal(en["copy.all"], "All other days");
+  assert.equal(it["copy.done_one"], "Copiato su 1 destinazione.");
+  assert.equal(it["copy.done_other"], "Copiato su {count} destinazioni.");
+  assert.equal(en["copy.done_one"], "Copied to 1 destination.");
+  assert.equal(en["copy.done_other"], "Copied to {count} destinations.");
+});
+
 // ---- 5. texts, week strips, editor ---------------------------------------------------------------
 
 test("the new texts exist in both languages with the same placeholders, and the placeholder is gone", () => {

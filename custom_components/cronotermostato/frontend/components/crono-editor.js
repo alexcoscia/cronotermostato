@@ -40,6 +40,7 @@ import "./crono-week-tabs.js";
 import "./crono-day.js";
 import "./crono-holiday.js";
 import "./crono-dialog.js";
+import "./crono-rooms.js";
 
 const PENDING_MS = 10000; // a just-created program that never shows up stops being waited for
 
@@ -124,19 +125,6 @@ export class CronoEditor extends LitElement {
       .section h3 {
         font-size: 15px;
         font-weight: 650;
-      }
-      .soon {
-        border: 1px dashed var(--crono-off-line);
-        border-radius: 10px;
-        padding: 10px 12px;
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-        color: var(--crono-muted);
-      }
-      .soon b {
-        color: var(--crono-off);
-        font-size: 12.5px;
       }
       .msg button {
         margin-inline-start: auto;
@@ -584,7 +572,15 @@ export class CronoEditor extends LitElement {
         <span class="muted">${tn(this.hass, "program.rooms", rooms.length)}</span>
       </section>
       ${this._renderWeek(t, selected, rooms)}
-      ${this._placeholder(t, "editor.soon_rooms")}
+      <section class="card section" aria-label=${t("room.title")}>
+        <crono-rooms
+          .hass=${this.hass}
+          .state=${this._state}
+          .program=${selected}
+          .canEdit=${canEdit(this._state, this.hass)}
+          .refresh=${() => this._store.refresh()}
+        ></crono-rooms>
+      </section>
     `;
   }
 
@@ -765,14 +761,6 @@ export class CronoEditor extends LitElement {
         <button slot="actions" class="btn danger" type="button" @click=${this._confirmSwitch}>${t("editor.switch_discard")}</button>
       </crono-dialog>
     `;
-  }
-
-  // PLACEHOLDERS: marked, they simulate nothing (no buttons, no fake data).
-  // Task 8 put the week in place of the first, Task 9 the holiday part; Task 10 replaces the last one.
-  _placeholder(t, textKey) {
-    return html`<section class="card section">
-      <div class="soon"><b>${t("editor.soon")}</b><span>${t(textKey)}</span></div>
-    </section>`;
   }
 }
 
