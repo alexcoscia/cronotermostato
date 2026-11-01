@@ -170,3 +170,87 @@ export const base = css`
     color: var(--crono-warn);
   }
 `;
+
+/** Colours of the modes on any element with the class b-heat / b-cool / b-off; hatched when calculated. */
+export const modeColors = css`
+  .b-heat {
+    background-color: var(--crono-heat-bg);
+    color: var(--crono-heat);
+    border-color: var(--crono-heat-line);
+  }
+  .b-cool {
+    background-color: var(--crono-cool-bg);
+    color: var(--crono-cool);
+    border-color: var(--crono-cool-line);
+  }
+  .b-off {
+    background-color: var(--crono-off-bg);
+    color: var(--crono-off);
+    border-color: var(--crono-off-line);
+  }
+  .is-auto {
+    background-image: repeating-linear-gradient(135deg, transparent 0 5px, var(--crono-hatch) 5px 6px);
+    border-style: dashed;
+  }
+`;
+
+/** Form fields and error lines, shared by the band row and the dialogs. */
+export const fields = css`
+  label,
+  .fl {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--crono-muted);
+    min-width: 0;
+  }
+  input[type="text"],
+  input[type="number"],
+  select {
+    min-height: 44px;
+    width: 100%;
+    min-width: 0;
+    padding: 0 10px;
+    border: 1px solid var(--crono-line);
+    border-radius: 8px;
+    background: var(--crono-surface);
+    color: var(--crono-text);
+    font-weight: 400;
+  }
+  input[aria-invalid="true"],
+  select[aria-invalid="true"] {
+    border: 2px solid var(--crono-error);
+  }
+  input[readonly] {
+    background: var(--crono-surface2);
+  }
+  input:disabled,
+  select:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+  .fe {
+    display: flex;
+    gap: 6px;
+    align-items: flex-start;
+    color: var(--crono-error);
+    font-size: 12.5px;
+    font-weight: 600;
+  }
+  .fe .ic {
+    margin-top: 2px;
+  }
+  .fw {
+    display: flex;
+    gap: 6px;
+    align-items: flex-start;
+    color: var(--crono-warn);
+    font-size: 12.5px;
+    font-weight: 600;
+  }
+  .fw .ic {
+    margin-top: 2px;
+  }
+`;
