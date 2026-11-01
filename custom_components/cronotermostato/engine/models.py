@@ -109,12 +109,15 @@ def _band_to_dict(band: Band) -> dict[str, Any]:
 def _band_from_dict(d: Mapping[str, Any]) -> Band:
     try:
         temperature = d.get("temperature")
+        auto = d.get("auto", False)
+        if not isinstance(auto, bool):
+            raise ProgramError(f"'auto' must be a boolean: {auto!r}")
         return Band(
             start=minutes_from_text(d["start"]),
             end=minutes_from_text(d["end"]),
             mode=d["mode"],
             temperature=temperature,
-            auto=bool(d.get("auto", False)),
+            auto=auto,
         )
     except (KeyError, TypeError, AttributeError) as err:
         raise ProgramError(f"Invalid band: {d!r}") from err
@@ -146,6 +149,9 @@ def program_from_dict(d: Mapping[str, Any]) -> Program:
         pid, name = d["id"], d["name"]
     except (KeyError, TypeError) as err:
         raise ProgramError(f"Invalid program: missing {err}") from err
+    for label, value in (("id", pid), ("name", name)):
+        if not isinstance(value, str) or not value.strip():
+            raise ProgramError(f"Program {label} must be a non-empty string")
     if not isinstance(week_raw, Sequence) or len(week_raw) != DAYS_PER_WEEK:
         raise ProgramError(f"A program needs exactly {DAYS_PER_WEEK} days")
     return Program(

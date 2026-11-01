@@ -102,3 +102,20 @@ def test_program_from_dict_invalid_band():
     del d["holiday"]
     with pytest.raises(ProgramError):
         program_from_dict(d)
+
+
+@pytest.mark.parametrize("bad", [1, "yes", None])
+def test_program_from_dict_auto_must_be_bool(bad):
+    d = program_to_dict(_program())
+    d["week"][0][0]["auto"] = bad
+    with pytest.raises(ProgramError):
+        program_from_dict(d)
+
+
+@pytest.mark.parametrize("key", ["id", "name"])
+@pytest.mark.parametrize("bad", ["", "  ", None, 5])
+def test_program_from_dict_id_name_non_empty_strings(key, bad):
+    d = program_to_dict(_program())
+    d[key] = bad
+    with pytest.raises(ProgramError):
+        program_from_dict(d)
