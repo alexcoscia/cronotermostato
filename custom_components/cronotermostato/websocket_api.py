@@ -20,7 +20,9 @@ Design decisions:
   never creates a program with an id chosen by the client.
 * ``subscribe`` sends ``{"type": "changed"}`` on every store change and on
   every room update; the client re-reads ``state``. Listeners are removed
-  when the subscription or the connection closes.
+  when the subscription or the connection closes. When the entry is reloaded
+  (e.g. options changed) ``SIGNAL_ENTRY_RELOADED`` makes it follow the new
+  store and send ``changed``; if the entry is only unloaded nothing happens.
 * The commands are registered in ``async_setup`` (like the services); without
   a loaded config entry ``state`` answers ``not_loaded``. ``preview_day`` and
   ``countries`` need no entry.
@@ -47,11 +49,11 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
 from .const import (
-    CONF_ADMIN_ONLY,
-    DEFAULT_ADMIN_ONLY,
     DOMAIN,
+    SIGNAL_ENTRY_RELOADED,
     SIGNAL_ROOM_UPDATED,
     SIGNAL_ROOMS_CHANGED,
+    entry_admin_only,
 )
 from .engine.calendar import supported_countries
 from .engine.day import program_views
@@ -101,15 +103,11 @@ def _loaded_data(connection: websocket_api.ActiveConnection, msg: dict[str, Any]
     return entries[0], entries[0].runtime_data
 
 
-def _admin_only(entry) -> bool:
-    return bool(entry.options.get(CONF_ADMIN_ONLY, DEFAULT_ADMIN_ONLY))
-
-
 def _require_editor_rights(
     entry, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> bool:
     """Answer ``unauthorized`` and return False if the user may not edit."""
-    if _admin_only(entry) and not connection.user.is_admin:
+    if entry_admin_only(entry) and not connection.user.is_admin:
         connection.send_error(
             msg["id"], ERR_UNAUTHORIZED, "Only administrators can edit programs"
         )
@@ -195,7 +193,7 @@ def ws_state(
             "rooms": rooms,
             "country": data.calendar.country,
             "subdiv": data.calendar.subdiv,
-            "options": {"admin_only": _admin_only(entry)},
+            "options": {"admin_only": entry_admin_only(entry)},
         },
     )
 
@@ -364,7 +362,13 @@ async def ws_unassign(
     data = _writer(connection, msg)
     if data is None:
         return
-    await async_unassign_room(data.manager, msg["climate_entity_id"])
+    climate_id = msg["climate_entity_id"]
+    if not climate_id.startswith("climate."):
+        connection.send_error(
+            msg["id"], ERR_INVALID_FORMAT, f"Not a climate entity: {climate_id}"
+        )
+        return
+    await async_unassign_room(data.manager, climate_id)
     connection.send_result(msg["id"])
 
 
@@ -411,11 +415,34 @@ def ws_subscribe(
     unsub_rooms = async_dispatcher_connect(hass, SIGNAL_ROOMS_CHANGED, follow_rooms)
 
     @callback
+    def entry_reloaded(data: Any) -> None:
+        """The entry was reloaded: follow the new store and tell the client.
+
+        The data comes in the signal: during setup the entry is not yet in the
+        ``loaded`` state.
+        """
+        nonlocal store, unsub_store
+        if closed:
+            return
+        new_store = data.store
+        if new_store is not store:
+            unsub_store()
+            store = new_store
+            unsub_store = store.async_add_listener(store_changed)
+            for unsub in room_unsubs.values():
+                unsub()
+            room_unsubs.clear()
+        store_changed()
+
+    unsub_reload = async_dispatcher_connect(hass, SIGNAL_ENTRY_RELOADED, entry_reloaded)
+
+    @callback
     def unsubscribe() -> None:
         nonlocal closed
         closed = True
         unsub_store()
         unsub_rooms()
+        unsub_reload()
         for unsub in room_unsubs.values():
             unsub()
         room_unsubs.clear()

@@ -11,14 +11,13 @@ from homeassistant.core import HomeAssistant
 from homeassistant.loader import async_get_integration
 
 from .const import (
-    CONF_ADMIN_ONLY,
     CONF_SHOW_SIDEBAR,
-    DEFAULT_ADMIN_ONLY,
     DEFAULT_SHOW_SIDEBAR,
     DOMAIN,
     PANEL_ELEMENT,
     PANEL_URL_PATH,
     STATIC_URL_BASE,
+    entry_admin_only,
 )
 
 FRONTEND_DIR = Path(__file__).parent / "frontend"
@@ -61,7 +60,7 @@ async def async_register_editor(hass: HomeAssistant, entry: ConfigEntry) -> None
     async_unregister_editor on unload: a panel registered twice raises.
     """
     show_sidebar = bool(entry.options.get(CONF_SHOW_SIDEBAR, DEFAULT_SHOW_SIDEBAR))
-    admin_only = bool(entry.options.get(CONF_ADMIN_ONLY, DEFAULT_ADMIN_ONLY))
+    admin_only = entry_admin_only(entry)
     module_url = await async_module_url(hass)
     frontend.add_extra_js_url(hass, module_url)
     if not show_sidebar:

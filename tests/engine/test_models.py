@@ -188,3 +188,20 @@ def test_program_from_dict_rejects_bad_preset(bad):
     d["week"][0][0]["preset"] = bad
     with pytest.raises(ProgramError):
         program_from_dict(d)
+
+
+def test_revision_same_for_int_and_float_temperature():
+    from custom_components.cronotermostato.engine.models import program_revision
+
+    def prog(temp):
+        return program_from_dict(
+            {
+                "id": "p",
+                "name": "P",
+                "week": [[{"start": "08:00", "end": "12:00", "mode": "heat", "temperature": temp}]] * 7,
+                "holiday": [],
+            }
+        )
+
+    assert program_revision(prog(19)) == program_revision(prog(19.0))
+    assert program_revision(prog(19)) != program_revision(prog(19.5))

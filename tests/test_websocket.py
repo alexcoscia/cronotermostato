@@ -716,3 +716,58 @@ async def test_subscribe_room_update_notifies(env, hass_ws_client):  # noqa: F81
     await env.hass.async_block_till_done()
     event = await client.receive_json()
     assert event["event"] == {"type": "changed"}
+
+
+async def test_subscribe_follows_reloaded_entry(env, hass_ws_client):  # noqa: F811
+    from homeassistant.helpers import dispatcher
+
+    pid = await env.create()
+    await env.call("assign", program_id=pid, climate_entity_id=ROOM)
+    first = await hass_ws_client(env.hass)
+    second = await hass_ws_client(env.hass)
+    await first.send_json_auto_id({"type": "cronotermostato/subscribe"})
+    sub = await first.receive_json()
+    assert sub["success"]
+
+    old_store = env.store
+    env.hass.config_entries.async_update_entry(
+        env.entry, options={"admin_only": False}
+    )
+    # The options flow reloads the entry (OptionsFlowWithReload).
+    assert await env.hass.config_entries.async_reload(env.entry.entry_id)
+    await env.hass.async_block_till_done()
+    new_store = env.entry.runtime_data.store
+    assert new_store is not old_store
+    # The reload itself tells the client to re-read.
+    event = await first.receive_json()
+    assert event["type"] == "event" and event["id"] == sub["id"]
+
+    saved = await ws(second, "save_program", **save_data())
+    assert saved["success"], saved
+    event = await first.receive_json()
+    assert event["event"] == {"type": "changed"}
+    mine = lambda st: [c for c in st._listeners if "ws_subscribe" in c.__qualname__]  # noqa: E731
+    assert mine(old_store) == [] and len(mine(new_store)) == 1
+
+    await first.close()
+    await env.hass.async_block_till_done()
+    await asyncio.sleep(0)
+    assert mine(new_store) == []
+    signals = env.hass.data[dispatcher.DATA_DISPATCHER]
+    assert not signals.get("cronotermostato_entry_reloaded")
+
+
+async def test_subscribe_survives_unload_without_reload(env, hass_ws_client):  # noqa: F811
+    client = await hass_ws_client(env.hass)
+    await client.send_json_auto_id({"type": "cronotermostato/subscribe"})
+    assert (await client.receive_json())["success"]
+    assert await env.hass.config_entries.async_unload(env.entry.entry_id)
+    await env.hass.async_block_till_done()
+    await client.close()
+    await env.hass.async_block_till_done()
+
+
+async def test_unassign_rejects_non_climate(env, hass_ws_client):  # noqa: F811
+    client = await hass_ws_client(env.hass)
+    msg = await ws(client, "unassign", climate_entity_id="sensor.x")
+    assert not msg["success"] and msg["error"]["code"] == "invalid_format"

@@ -9,17 +9,18 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryError
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.typing import ConfigType
 
 from .const import (
-    CONF_ADMIN_ONLY,
     CONF_COUNTRY,
     CONF_SHOW_SIDEBAR,
     CONF_SUBDIV,
-    DEFAULT_ADMIN_ONLY,
     DEFAULT_SHOW_SIDEBAR,
     DOMAIN,
     PLATFORMS,
+    SIGNAL_ENTRY_RELOADED,
+    entry_admin_only,
 )
 from .engine.calendar import HolidayCalendar
 from .frontend import (
@@ -59,7 +60,7 @@ def entry_editor_options(entry: ConfigEntry) -> tuple[bool, bool]:
     """Return (show_sidebar, admin_only); entries without the keys use the defaults."""
     return (
         bool(entry.options.get(CONF_SHOW_SIDEBAR, DEFAULT_SHOW_SIDEBAR)),
-        bool(entry.options.get(CONF_ADMIN_ONLY, DEFAULT_ADMIN_ONLY)),
+        entry_admin_only(entry),
     )
 
 
@@ -97,6 +98,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: CronoConfigEntry) -> boo
     except BaseException:
         await manager.async_stop()
         raise
+    # Open WebSocket subscriptions follow the new store (reload on options change).
+    async_dispatcher_send(hass, SIGNAL_ENTRY_RELOADED, entry.runtime_data)
     return True
 
 

@@ -164,10 +164,15 @@ def program_revision(p: Program) -> str:
     """Short fingerprint of a program's content (for optimistic concurrency).
 
     First 12 hex characters of the SHA-1 of the canonical JSON (sorted keys)
-    of ``program_to_dict``: equal programs have equal revisions.
+    of ``program_to_dict`` with every temperature coerced to float (19 and
+    19.0 are the same content): equal programs have equal revisions.
     """
+    data = program_to_dict(p)
+    for band in (*(b for day in data["week"] for b in day), *data["holiday"]):
+        if band["temperature"] is not None:
+            band["temperature"] = float(band["temperature"])
     canonical = json.dumps(
-        program_to_dict(p), sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        data, sort_keys=True, separators=(",", ":"), ensure_ascii=False
     )
     return hashlib.sha1(canonical.encode(), usedforsecurity=False).hexdigest()[:12]
 
