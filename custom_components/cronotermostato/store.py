@@ -88,7 +88,15 @@ def _clean_name(name: Any) -> str:
 
 
 class CronoStore:
-    """Programs, assignments (key = climate entity_id) and overrides."""
+    """Programs, assignments (key = climate entity_id) and overrides.
+
+    ``programs``, ``assignments`` and ``overrides`` are read-only for
+    consumers: every change must go through the ``async_*`` methods, which
+    validate, save and notify the listeners. Changes that alter nothing
+    (same pause value, same program, same override) neither save nor notify.
+    After ``async_update_program`` an existing override stays valid: it does
+    not depend on the program's bands.
+    """
 
     def __init__(self, hass: HomeAssistant) -> None:
         self._hass = hass
@@ -102,23 +110,35 @@ class CronoStore:
 
     async def async_load(self) -> None:
         """Load data from disk, dropping anything inconsistent."""
-        data = await self._store.async_load() or {}
+        # Discarded data is cleaned from the file at the first change.
+        data = await self._store.async_load()
+        if not isinstance(data, Mapping):
+            data = {}
         self.programs = {}
-        for raw in data.get("programs", []):
+        programs = data.get("programs")
+        for raw in programs if isinstance(programs, list) else []:
             try:
                 prog = program_from_dict(raw)
-            except ProgramError as err:
-                _LOGGER.warning("Ignoring invalid stored program: %s", err)
+            except (ProgramError, TypeError, AttributeError, KeyError, ValueError) as err:
+                _LOGGER.warning("Ignoring invalid stored program: %r", err)
                 continue
             self.programs[prog.id] = prog
         self.assignments = {}
-        for climate_id, raw in data.get("assignments", {}).items():
-            if raw.get("program_id") in self.programs:
+        assignments = data.get("assignments")
+        for climate_id, raw in (
+            assignments.items() if isinstance(assignments, dict) else ()
+        ):
+            if not isinstance(raw, Mapping):
+                _LOGGER.warning("Ignoring invalid stored assignment: %r", climate_id)
+                continue
+            program_id = raw.get("program_id")
+            if isinstance(program_id, str) and program_id in self.programs:
                 self.assignments[climate_id] = Assignment(
-                    raw["program_id"], bool(raw.get("paused", False))
+                    program_id, bool(raw.get("paused", False))
                 )
         self.overrides = {}
-        for climate_id, raw in data.get("overrides", {}).items():
+        overrides = data.get("overrides")
+        for climate_id, raw in overrides.items() if isinstance(overrides, dict) else ():
             if climate_id not in self.assignments:
                 continue
             try:
@@ -129,8 +149,14 @@ class CronoStore:
                     raw["mode"], raw.get("temperature"), until.astimezone(UTC)
                 )
                 self._check_override(override)
-            except (KeyError, TypeError, ValueError, ProgramError) as err:
-                _LOGGER.warning("Ignoring invalid stored override: %s", err)
+            except (
+                KeyError,
+                TypeError,
+                AttributeError,
+                ValueError,
+                ProgramError,
+            ) as err:
+                _LOGGER.warning("Ignoring invalid stored override: %r", err)
                 continue
             self.overrides[climate_id] = override
 
@@ -237,6 +263,8 @@ class CronoStore:
         """Assign a room to a program (replaces a previous assignment)."""
         self._get(program_id)
         old = self.assignments.get(climate_id)
+        if old and old.program_id == program_id:
+            return
         self.assignments[climate_id] = Assignment(
             program_id, old.paused if old else False
         )
@@ -254,7 +282,10 @@ class CronoStore:
 
     async def async_set_paused(self, climate_id: str, paused: bool) -> None:
         """Pause or resume an assigned room."""
-        self._assignment(climate_id).paused = paused
+        assignment = self._assignment(climate_id)
+        if assignment.paused == paused:
+            return
+        assignment.paused = paused
         await self._async_changed()
 
     def _assignment(self, climate_id: str) -> Assignment:
@@ -276,9 +307,10 @@ class CronoStore:
         """Set the manual override of an assigned room."""
         self._assignment(climate_id)
         self._check_override(override)
-        self.overrides[climate_id] = replace(
-            override, until=override.until.astimezone(UTC)
-        )
+        new = replace(override, until=override.until.astimezone(UTC))
+        if self.overrides.get(climate_id) == new:
+            return
+        self.overrides[climate_id] = new
         await self._async_changed()
 
     async def async_clear_override(self, climate_id: str) -> None:

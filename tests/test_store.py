@@ -3,12 +3,17 @@
 from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
+from homeassistant.helpers.storage import Store
 
 from custom_components.cronotermostato.engine.models import (
     Band,
+    Program,
     ProgramError,
 )
+from custom_components.cronotermostato.const import DOMAIN
+from custom_components.cronotermostato.engine.models import program_to_dict
 from custom_components.cronotermostato.store import (
+    STORAGE_VERSION,
     Assignment,
     CronoStore,
     Override,
@@ -201,3 +206,147 @@ async def test_listener_called(hass):
     remove()
     await store.async_create_program("Y", WEEK, HOLIDAY)
     assert len(calls) == 8
+
+
+async def _seed(hass, data) -> CronoStore:
+    """Write raw ``data`` as the stored file, then load a fresh store."""
+    await Store(hass, STORAGE_VERSION, DOMAIN).async_save(data)
+    return await _store(hass)
+
+
+def _good_program() -> dict:
+    return program_to_dict(Program("casa", "Casa", WEEK, HOLIDAY))
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        {"programs": None},
+        {"programs": {}},
+        {"programs": "x"},
+        {"programs": [None, 1, "x", [], {}]},
+        {"programs": [{"id": "a", "name": "A", "week": None, "holiday": None}]},
+        {"assignments": None},
+        {"assignments": []},
+        {"assignments": {"c": None}},
+        {"assignments": {"c": "x"}},
+        {"overrides": []},
+        {"overrides": None},
+        {"overrides": {"c": None}},
+        {"overrides": {"c": []}},
+        [],
+        "x",
+    ],
+)
+async def test_load_robust_to_wrong_shapes(hass, data):
+    store = await _seed(hass, data)
+    assert store.programs == {}
+    assert store.assignments == {}
+    assert store.overrides == {}
+
+
+async def test_load_wrong_shapes_next_to_valid_data(hass):
+    good = _good_program()
+    store = await _seed(
+        hass,
+        {
+            "programs": [None, good, 5],
+            "assignments": {ROOM: {"program_id": "casa"}, "x": None, "y": 3},
+            "overrides": {
+                ROOM: {"mode": "heat", "temperature": 21.0, "until": "2026-11-02T12:00:00+00:00"},
+                "x": None,
+            },
+        },
+    )
+    assert list(store.programs) == ["casa"]
+    assert list(store.assignments) == [ROOM]
+    assert list(store.overrides) == [ROOM]
+
+
+async def test_load_discards_invalid_program(hass):
+    good = _good_program()
+    bad = dict(good, id="bad", week=good["week"][:3])  # wrong number of days
+    store = await _seed(hass, {"programs": [bad, good]})
+    assert list(store.programs) == ["casa"]
+
+
+async def test_load_discards_invalid_overrides(hass):
+    good = _good_program()
+    valid = {"mode": "heat", "temperature": 21.0}
+    rooms = ["climate.a", "climate.b", "climate.c", "climate.d", "climate.e"]
+    store = await _seed(
+        hass,
+        {
+            "programs": [good],
+            "assignments": {r: {"program_id": "casa"} for r in rooms},
+            "overrides": {
+                "climate.a": {**valid, "until": "2026-11-02T12:00:00"},  # naive
+                "climate.b": {**valid, "until": "not a date"},
+                "climate.c": {"mode": "heat", "temperature": None, "until": "2026-11-02T12:00:00+00:00"},
+                "climate.d": {"mode": "nope", "temperature": 1, "until": "2026-11-02T12:00:00+00:00"},
+                "climate.e": {**valid},  # no "until"
+            },
+        },
+    )
+    assert store.overrides == {}
+
+
+async def test_load_keeps_expired_override(hass):
+    # Loading does not check expiry: an already expired override is kept and
+    # the controller ignores it (compares ``until`` with now).
+    store = await _seed(
+        hass,
+        {
+            "programs": [_good_program()],
+            "assignments": {ROOM: {"program_id": "casa"}},
+            "overrides": {
+                ROOM: {"mode": "heat", "temperature": 21.0, "until": "2020-01-01T00:00:00+00:00"}
+            },
+        },
+    )
+    assert store.overrides[ROOM].until == datetime(2020, 1, 1, tzinfo=UTC)
+
+
+async def test_no_notification_when_nothing_changes(hass):
+    store = await _store(hass)
+    prog = await store.async_create_program("Casa", WEEK, HOLIDAY)
+    await store.async_assign(ROOM, prog.id)
+    await store.async_set_paused(ROOM, True)
+    until = datetime(2026, 11, 2, 12, 0, tzinfo=UTC)
+    await store.async_set_override(ROOM, Override("heat", 24.0, until))
+
+    calls = []
+    store.async_add_listener(lambda: calls.append(1))
+    saves = []
+    real_save = store._store.async_save  # noqa: SLF001
+
+    async def counting_save(data):
+        saves.append(1)
+        await real_save(data)
+
+    store._store.async_save = counting_save  # noqa: SLF001
+
+    await store.async_set_paused(ROOM, True)  # same value
+    await store.async_assign(ROOM, prog.id)  # same program
+    # same override, even expressed in another timezone
+    same = until.astimezone(timezone(timedelta(hours=1)))
+    await store.async_set_override(ROOM, Override("heat", 24.0, same))
+    await store.async_clear_override("climate.altra")  # none
+    await store.async_unassign("climate.altra")  # not assigned
+    assert calls == []
+    assert saves == []
+
+    await store.async_set_paused(ROOM, False)
+    await store.async_set_override(ROOM, Override("heat", 25.0, until))
+    assert len(calls) == 2
+    assert len(saves) == 2
+
+
+async def test_update_program_keeps_override(hass):
+    store = await _store(hass)
+    prog = await store.async_create_program("Casa", WEEK, HOLIDAY)
+    await store.async_assign(ROOM, prog.id)
+    until = datetime(2026, 11, 2, 12, 0, tzinfo=UTC)
+    await store.async_set_override(ROOM, Override("heat", 24.0, until))
+    await store.async_update_program(prog.id, name="Nuovo")
+    assert store.overrides[ROOM].until == until
