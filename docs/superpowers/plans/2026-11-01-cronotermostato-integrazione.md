@@ -178,7 +178,7 @@
 
 **Interfaces:**
 - Consumes: `supported_countries`, `Manager`, `CronoStore`.
-- Produces: voce di configurazione con `data = {"country": str, "subdiv": str|None}`; `async_setup_entry` crea `CronoStore`, `HolidayCalendar`, `Manager` in `hass.data[DOMAIN]`; `async_unload_entry` li ferma. Opzioni per cambiare nazione e suddivisione (ricalcola con `manager.async_refresh_all()`).
+- Produces: voce di configurazione con `data = {"country": str, "subdiv": str|None}`; `async_setup_entry` crea `CronoStore`, `HolidayCalendar`, `Manager` in `entry.runtime_data` (dataclass `CronoData(store, calendar, manager)`; servizi e WebSocket, registrati in `async_setup`, ottengono il manager da `hass.config_entries.async_loaded_entries(DOMAIN)[0].runtime_data`, con errore chiaro se la voce non è caricata); `async_unload_entry` li ferma. Opzioni per cambiare nazione e suddivisione con `OptionsFlowWithReload` (la voce si ricarica e ricalcola; nessun update listener). Task 9: `async_forward_entry_setups` va dentro il `try` che ferma il Manager in caso di errore.
 
 - [ ] **Step 1: Test.** Flusso: passo 1 sceglie il paese; se ha suddivisioni, passo 2 le propone (facoltativo); creazione voce. Seconda istanza rifiutata (`single_instance_allowed`). Opzioni cambiano nazione e provocano un ricalcolo. `test_setup_unload` senza residui (timer annullati).
 - [ ] **Step 2-4:** Fallire, implementare, passare. Commit `"Configurazione per nazione e ciclo di vita"`.
