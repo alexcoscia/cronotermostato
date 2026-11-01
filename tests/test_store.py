@@ -350,3 +350,13 @@ async def test_update_program_keeps_override(hass):
     await store.async_set_override(ROOM, Override("heat", 24.0, until))
     await store.async_update_program(prog.id, name="Nuovo")
     assert store.overrides[ROOM].until == until
+
+
+async def test_slug_truncated_and_still_unique(hass):
+    store = CronoStore(hass)
+    await store.async_load()
+    week = ((),) * 7
+    ids = [
+        (await store.async_create_program("a" * 100, week, ())).id for _ in range(3)
+    ]
+    assert ids == ["a" * 50, "a" * 50 + "_2", "a" * 50 + "_3"]

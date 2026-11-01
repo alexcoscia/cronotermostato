@@ -19,6 +19,7 @@ from homeassistant.helpers.selector import (
     SelectSelectorMode,
 )
 
+from . import entry_location
 from .const import CONF_COUNTRY, CONF_SUBDIV, DOMAIN
 from .engine.calendar import HolidayCalendar, supported_countries
 
@@ -144,8 +145,6 @@ class CronoOptionsFlow(_LocationStepsMixin, OptionsFlowWithReload):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Step 1: the country."""
-        from . import entry_location
-
         country, _ = entry_location(self.config_entry)
         form = await self._async_country_step("init", user_input, country)
         if form is not None:
@@ -159,8 +158,6 @@ class CronoOptionsFlow(_LocationStepsMixin, OptionsFlowWithReload):
     ) -> ConfigFlowResult:
         """Step 2 (only if the country has subdivisions): optional subdivision."""
         if user_input is None:
-            from . import entry_location
-
             country, subdiv = entry_location(self.config_entry)
             return await self._async_subdiv_form(
                 "subdiv", subdiv if country == self._country else None

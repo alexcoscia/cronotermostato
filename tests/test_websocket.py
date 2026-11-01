@@ -1,10 +1,12 @@
 """Tests for the WebSocket API of the editor."""
 
+from datetime import datetime
+
 import pytest
 
 from custom_components.cronotermostato import async_setup
 
-from test_services import DAY, ROOM, at, band, env  # noqa: F401
+from test_services import DAY, ROOM, TZ, at, band, env  # noqa: F401
 
 
 def auto(start, end):
@@ -155,3 +157,37 @@ async def test_commands_open_to_read_only_user(
     ):
         await client.send_json_auto_id({"type": f"cronotermostato/{command}", **extra})
         assert (await client.receive_json())["success"], command
+
+
+async def test_state_assigned_room_without_controller(env, hass_ws_client):  # noqa: F811
+    program_id = await env.create()
+    await env.call("assign", program_id=program_id, climate_entity_id=ROOM)
+    controller = env.entry.runtime_data.manager.controllers.pop(ROOM)
+    await controller.async_stop()  # simulate: no controller (and no leaked timer)
+    client = await hass_ws_client(env.hass)
+    await client.send_json_auto_id({"type": "cronotermostato/state"})
+    (room,) = (await client.receive_json())["result"]["rooms"]
+    assert room["status"] == "not_running"
+    assert room["program_id"] == program_id
+    assert room["slot"] is None and room["manual"] is False
+    assert room["holiday"] is False and room["override_until"] is None
+
+
+async def test_state_holiday_and_manual(env, hass_ws_client):  # noqa: F811
+    program_id = await env.create()
+    await env.call("assign", program_id=program_id, climate_entity_id=ROOM)
+    client = await hass_ws_client(env.hass)
+    await client.send_json_auto_id({"type": "cronotermostato/state"})
+    (room,) = (await client.receive_json())["result"]["rooms"]
+    assert room["holiday"] is False  # Monday 2026-10-26
+
+    await env.go(datetime(2026, 12, 25, 9, tzinfo=TZ))  # Christmas
+    await env.call("set_manual", climate_entity_id=ROOM, mode="cool", temperature=25)
+    await client.send_json_auto_id({"type": "cronotermostato/state"})
+    (room,) = (await client.receive_json())["result"]["rooms"]
+    assert room["holiday"] is True
+    assert room["manual"] is True
+    assert room["override_until"] is not None
+    assert datetime.fromisoformat(room["override_until"]) > datetime(
+        2026, 12, 25, 9, tzinfo=TZ
+    )

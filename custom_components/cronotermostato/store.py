@@ -63,9 +63,13 @@ class Override:
     until: datetime
 
 
+MAX_SLUG = 50
+
+
 def _slug(name: str) -> str:
     text = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
-    return re.sub(r"[^a-z0-9]+", "_", text.lower()).strip("_") or "programma"
+    slug = re.sub(r"[^a-z0-9]+", "_", text.lower())[:MAX_SLUG].strip("_")
+    return slug or "programma"
 
 
 def _user_bands(bands: Sequence[Band]) -> tuple[Band, ...]:

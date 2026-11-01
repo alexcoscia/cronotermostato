@@ -47,7 +47,7 @@ _BAND = vol.Schema(
 )
 _DAY = vol.All(cv.ensure_list, [_BAND])
 _WEEK = vol.All(list, vol.Length(min=DAYS_PER_WEEK, max=DAYS_PER_WEEK), [_DAY])
-_NAME = vol.All(cv.string, vol.Length(min=1))
+_NAME = vol.All(cv.string, vol.Length(min=1, max=100))
 _CLIMATE = vol.All(cv.entity_id, cv.entity_domain("climate"))
 
 CREATE_SCHEMA = vol.Schema(

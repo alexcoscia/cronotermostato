@@ -4,6 +4,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import pytest
+import voluptuous as vol
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import (
@@ -144,7 +145,7 @@ async def test_invalid_bands_rejected(env, bands):
 
 
 async def test_week_needs_seven_days(env):
-    with pytest.raises(Exception):  # schema rejects it  # noqa: B017
+    with pytest.raises(vol.Invalid):  # schema rejects it
         await env.call("create_program", name="X", week=[DAY] * 6, holiday=[])
     assert env.store.programs == {}
 
@@ -302,3 +303,12 @@ async def test_update_current_slot_is_applied(env):
     await env.call("update_program", program_id=program_id, week=[new_day] * 7)
     await env.hass.async_block_till_done()
     assert (ROOM, "set_temperature", 19.0) in env.calls
+
+
+async def test_program_name_max_100(env):
+    await env.create("x" * 100)
+    with pytest.raises(vol.Invalid):
+        await env.call(
+            "create_program", name="x" * 101, week=WEEK, holiday=HOLIDAY
+        )
+    assert len(env.store.programs) == 1

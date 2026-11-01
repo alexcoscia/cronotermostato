@@ -11,6 +11,10 @@ Design decisions:
 * The commands are registered in ``async_setup`` (like the services); without
   a loaded config entry ``state`` answers ``not_loaded``. ``preview_day`` and
   ``countries`` need no entry.
+* ``status`` of a room is the controller's ``RoomStatus`` (``ok``, ``paused``,
+  ``unavailable``...); a room assigned in the store whose controller does not
+  exist yet (sync pending or start failed) is ``not_running``. The editor
+  must treat ``status`` as an open string, not a closed set.
 * ``preview_day`` discards incoming bands with ``auto: true``: the editor may
   send back the normalized output, and automatic bands are always computed.
 * ``countries`` is large: computed once in the executor and cached.
@@ -71,7 +75,7 @@ def ws_state(
                 "program_id": assignment.program_id,
                 "program_name": program.name if program else None,
                 "paused": assignment.paused,
-                "status": state.status if state else "unassigned",
+                "status": state.status if state else "not_running",
                 "slot": slot_dict(state.slot) if state else None,
                 "next_slot": slot_dict(state.next_slot) if state else None,
                 "manual": state.manual if state else False,

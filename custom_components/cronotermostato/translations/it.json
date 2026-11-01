@@ -12,7 +12,7 @@
         "title": "Regione",
         "description": "Facoltativo: scegli una regione di {country} per le festività regionali.",
         "data": {
-          "subdiv": "Regione"
+          "subdiv": "Regione / provincia"
         }
       }
     },
@@ -37,7 +37,7 @@
         "title": "Regione",
         "description": "Facoltativo: scegli una regione di {country} per le festività regionali.",
         "data": {
-          "subdiv": "Regione"
+          "subdiv": "Regione / provincia"
         }
       }
     },

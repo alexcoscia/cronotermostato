@@ -25,7 +25,6 @@ class Manager:
         self, hass: HomeAssistant, store: CronoStore, calendar: HolidayCalendar
     ) -> None:
         self._hass = hass
-        self._store = store
         self.store = store
         self._calendar = calendar
         self.controllers: dict[str, RoomController] = {}
@@ -37,7 +36,7 @@ class Manager:
         """Start following the store and start a controller per room."""
         self._stopped = False
         if self._unsub is None:
-            self._unsub = self._store.async_add_listener(self._store_changed)
+            self._unsub = self.store.async_add_listener(self._store_changed)
         await self.async_sync()
 
     async def async_stop(self) -> None:
@@ -61,7 +60,7 @@ class Manager:
         async with self._lock:
             if self._stopped:
                 return
-            wanted = set(self._store.assignments)
+            wanted = set(self.store.assignments)
             changed = wanted != set(self.controllers)
             for climate_id in [c for c in self.controllers if c not in wanted]:
                 controller = self.controllers.pop(climate_id)
@@ -71,7 +70,7 @@ class Manager:
                     _LOGGER.exception("Cannot stop controller of %s", climate_id)
             for climate_id in sorted(wanted - set(self.controllers)):
                 controller = RoomController(
-                    self._hass, self._store, self._calendar, climate_id
+                    self._hass, self.store, self._calendar, climate_id
                 )
                 self.controllers[climate_id] = controller
                 try:
@@ -84,5 +83,5 @@ class Manager:
 
     @callback
     def _store_changed(self) -> None:
-        if set(self._store.assignments) != set(self.controllers):
+        if set(self.store.assignments) != set(self.controllers):
             self._hass.async_create_task(self.async_sync())
