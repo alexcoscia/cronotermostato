@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Dominio `cronotermostato`; repository HACS `cronotermostato` (`~/tessera-cronotermostato` va rinominata `~/cronotermostato` nel Task 1, dopo aver fermato il server delle bozze).
+- Dominio `cronotermostato`; repository HACS `cronotermostato` (la cartella di lavoro è `~/cronotermostato`).
 - Modi di una fascia: solo `heat`, `cool`, `off`. `off` non ha temperatura. Niente preset, niente `heat_cool`.
 - Orari come minuti dalla mezzanotte (0..1440); testo `"HH:MM"`, con `"24:00"` ammesso solo come fine.
 - Fasce senza sovrapposizioni, estremi senza minuti di scarto (8:00-12:00 poi 12:00-...). Si salvano solo le fasce dell'utente; le fasce automatiche (`auto=True`, `off`) si calcolano.
@@ -44,7 +44,7 @@
 **Interfaces:**
 - Produces: `const.DOMAIN = "cronotermostato"`; ambiente `.venv` con Python 3.14; comando `uv run pytest`.
 
-- [ ] **Step 1:** Fermare il server delle bozze (`bash ~/.claude/plugins/cache/claude-plugins-official/superpowers/7.0.0/skills/brainstorming/scripts/stop-server.sh <session_dir>`), poi `mv ~/tessera-cronotermostato ~/cronotermostato`.
+- [ ] **Step 1:** La cartella è già `~/cronotermostato` (rinominata prima di iniziare l'esecuzione); verificare con `pwd` e `git log --oneline -1`.
 - [ ] **Step 2:** `uv venv --python 3.14 .venv` e installare `pytest-homeassistant-custom-component` nella versione che richiede `homeassistant==2026.10.4`. Se non esiste su PyPI, fermarsi e riferire a Alex quale versione di HA coprono i pacchetti disponibili prima di continuare.
 - [ ] **Step 3:** Scrivere il test fallito `tests/test_smoke.py::test_domain` (`assert DOMAIN == "cronotermostato"`); eseguirlo e vedere il fallimento per modulo mancante.
 - [ ] **Step 4:** Creare `manifest.json` con `domain`, `name`, `version "0.1.0"`, `codeowners ["@alexcoscia"]`, `config_flow true`, `integration_type "service"`, `iot_class "calculated"`, `single_config_entry true`, `requirements ["holidays==0.106"]`, `documentation` e `issue_tracker` (URL del repository GitHub), e `hacs.json` (`name`, `homeassistant: "2026.10.0"`). Verificare i campi richiesti da hassfest e HACS sulla documentazione attuale, non a memoria.
