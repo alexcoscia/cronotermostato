@@ -7,13 +7,13 @@ import pytest
 import voluptuous as vol
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import entity_registry as er
+from homeassistant.setup import async_setup_component
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
     async_fire_time_changed,
 )
 
 from custom_components.cronotermostato.const import CONF_COUNTRY, CONF_SUBDIV, DOMAIN
-from homeassistant.setup import async_setup_component
 
 TZ = ZoneInfo("Europe/Rome")
 ROOM = "climate.salotto"

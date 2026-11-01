@@ -12,8 +12,8 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 
 from .const import CONF_COUNTRY, CONF_SUBDIV, DOMAIN, PLATFORMS
-from .frontend import async_register_static
 from .engine.calendar import HolidayCalendar
+from .frontend import async_register_static
 from .manager import Manager
 from .services import async_register_services
 from .store import CronoStore

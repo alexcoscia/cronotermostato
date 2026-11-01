@@ -6,7 +6,10 @@ from homeassistant.loader import async_get_integration
 from homeassistant.setup import async_setup_component
 
 from custom_components.cronotermostato.const import DOMAIN, STATIC_URL_BASE
-from custom_components.cronotermostato.frontend import async_module_url
+from custom_components.cronotermostato.frontend import (
+    async_module_url,
+    async_register_static,
+)
 
 
 async def _base(hass):
@@ -45,11 +48,19 @@ async def test_static_path_traversal(hass, hass_client):
 
 
 async def test_static_registered_once(hass, hass_client):
-    await _base(hass)
-    # A second setup pass must not try to register the path again.
-    from custom_components.cronotermostato.frontend import async_register_static
+    base = await _base(hass)
 
+    def count():
+        return sum(
+            1
+            for r in hass.http.app.router.resources()
+            if getattr(r, "canonical", "").startswith(base)
+        )
+
+    assert count() == 1
+    # A second pass must not register the path again.
     await async_register_static(hass)
+    assert count() == 1
     client = await hass_client()
     assert (await client.get(await async_module_url(hass))).status == 200
 

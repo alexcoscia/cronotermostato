@@ -3,11 +3,11 @@
 from datetime import datetime
 
 import pytest
+from homeassistant.setup import async_setup_component
 
 from custom_components.cronotermostato import async_setup
 
 from test_services import DAY, ROOM, TZ, at, band, env  # noqa: F401
-from homeassistant.setup import async_setup_component
 
 
 def auto(start, end):
