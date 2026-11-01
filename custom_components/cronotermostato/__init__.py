@@ -104,6 +104,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: CronoConfigEntry) -> bo
     """Unload the config entry and stop every controller."""
     if not await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
         return False
-    await entry.runtime_data.manager.async_stop()
-    await async_unregister_editor(hass)
+    try:
+        await entry.runtime_data.manager.async_stop()
+    finally:
+        # The platforms are gone: the panel must go too, or a reload raises.
+        await async_unregister_editor(hass)
     return True

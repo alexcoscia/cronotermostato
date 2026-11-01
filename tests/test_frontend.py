@@ -254,3 +254,71 @@ async def test_panel_hidden_from_non_admin(
     await _set_editor(hass, entry, **{CONF_SHOW_SIDEBAR: True, CONF_ADMIN_ONLY: False})
     assert PANEL_URL_PATH in await _panels_for(hass, hass_ws_client, hass_read_only_user)
     await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_register_failure_rolls_back_extra_url(hass):
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={CONF_COUNTRY: "IT", CONF_SUBDIV: None},
+        unique_id=DOMAIN,
+    )
+    entry.add_to_hass(hass)
+    with (
+        patch(
+            "custom_components.cronotermostato.frontend.panel_custom.async_register_panel",
+            side_effect=RuntimeError("boom"),
+        ),
+        patch(
+            "custom_components.cronotermostato.manager.Manager.async_stop"
+        ) as stop,
+    ):
+        assert not await hass.config_entries.async_setup(entry.entry_id)
+    stop.assert_awaited_once()
+    assert await async_module_url(hass) not in _extra_urls(hass)
+    assert not frontend.async_panel_exists(hass, PANEL_URL_PATH)
+
+
+async def test_register_failure_keeps_foreign_panel(hass):
+    assert await async_setup_component(hass, "frontend", {})
+    frontend.async_register_built_in_panel(
+        hass, "custom", frontend_url_path=PANEL_URL_PATH, config={"foreign": True}
+    )
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={CONF_COUNTRY: "IT", CONF_SUBDIV: None},
+        unique_id=DOMAIN,
+    )
+    entry.add_to_hass(hass)
+    with patch(
+        "custom_components.cronotermostato.manager.Manager.async_stop"
+    ) as stop:
+        assert not await hass.config_entries.async_setup(entry.entry_id)
+    stop.assert_awaited_once()
+    assert entry.state is ConfigEntryState.SETUP_ERROR
+    assert frontend.async_panel_exists(hass, PANEL_URL_PATH)
+    assert hass.data[frontend.DATA_PANELS][PANEL_URL_PATH].config == {"foreign": True}
+    assert await async_module_url(hass) not in _extra_urls(hass)
+
+
+async def test_unload_removes_editor_even_if_stop_fails(hass):
+    entry = await _entry(hass)
+    url = await async_module_url(hass)
+    with patch(
+        "custom_components.cronotermostato.manager.Manager.async_stop",
+        side_effect=RuntimeError("boom"),
+    ):
+        await hass.config_entries.async_unload(entry.entry_id)
+    assert not frontend.async_panel_exists(hass, PANEL_URL_PATH)
+    assert url not in _extra_urls(hass)
+
+
+async def test_unload_keeps_editor_if_platforms_stay(hass):
+    entry = await _entry(hass)
+    url = await async_module_url(hass)
+    with patch(
+        "homeassistant.config_entries.ConfigEntries.async_unload_platforms",
+        return_value=False,
+    ):
+        await hass.config_entries.async_unload(entry.entry_id)
+    assert frontend.async_panel_exists(hass, PANEL_URL_PATH)
+    assert url in _extra_urls(hass)

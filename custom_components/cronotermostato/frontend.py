@@ -66,15 +66,23 @@ async def async_register_editor(hass: HomeAssistant, entry: ConfigEntry) -> None
     frontend.add_extra_js_url(hass, module_url)
     if not show_sidebar:
         return
-    await panel_custom.async_register_panel(
-        hass,
-        frontend_url_path=PANEL_URL_PATH,
-        webcomponent_name=PANEL_ELEMENT,
-        sidebar_title="Cronotermostato",
-        sidebar_icon="mdi:calendar-clock",
-        module_url=module_url,
-        require_admin=admin_only,
-    )
+    # A panel with this path that is not ours must survive a failed registration.
+    panel_was_there = frontend.async_panel_exists(hass, PANEL_URL_PATH)
+    try:
+        await panel_custom.async_register_panel(
+            hass,
+            frontend_url_path=PANEL_URL_PATH,
+            webcomponent_name=PANEL_ELEMENT,
+            sidebar_title="Cronotermostato",
+            sidebar_icon="mdi:calendar-clock",
+            module_url=module_url,
+            require_admin=admin_only,
+        )
+    except BaseException:
+        frontend.remove_extra_js_url(hass, module_url)
+        if not panel_was_there:
+            frontend.async_remove_panel(hass, PANEL_URL_PATH, warn_if_unknown=False)
+        raise
 
 
 async def async_unregister_editor(hass: HomeAssistant) -> None:
