@@ -1,11 +1,12 @@
 // Entry point of the Cronotermostato frontend, loaded by Home Assistant as a
-// module (versioned URL). It defines the sidebar panel; the Lovelace card is
-// registered in a later step.
+// module (versioned URL). It defines the sidebar panel, the Lovelace card
+// (`cronotermostato-card`, with its visual editor) and announces the card in the card picker.
 
 import { LitElement, html, css } from "./lit.js";
 import { iconMenu } from "./icons.js";
 import { createT } from "./lib/i18n.js";
 import "./components/crono-editor.js";
+import { announceCard } from "./components/crono-card.js"; // defines cronotermostato-card and its editor
 
 export class CronotermostatoPanel extends LitElement {
   // Set by Home Assistant on a custom panel.
@@ -98,3 +99,5 @@ export class CronotermostatoPanel extends LitElement {
 }
 
 if (!customElements.get("cronotermostato-panel")) customElements.define("cronotermostato-panel", CronotermostatoPanel);
+
+announceCard();

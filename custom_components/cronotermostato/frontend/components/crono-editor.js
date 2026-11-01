@@ -52,6 +52,7 @@ export class CronoEditor extends LitElement {
   static properties = {
     hass: { attribute: false },
     narrow: { type: Boolean, reflect: true },
+    programId: { attribute: false }, // the Lovelace card: open this program (if it exists) instead of the remembered one
     _state: { state: true },
     _selection: { state: true },
     _draft: { state: true },
@@ -233,6 +234,7 @@ export class CronoEditor extends LitElement {
     super();
     this.hass = undefined;
     this.narrow = false;
+    this.programId = null;
     this._store = createStore();
     this._state = this._store.getState();
     this._selection = selectionOf(loadStoredSelection());
@@ -285,6 +287,10 @@ export class CronoEditor extends LitElement {
   }
 
   willUpdate(changed) {
+    if (changed.has("programId") && typeof this.programId === "string" && this.programId !== "" && this.programId !== this._selection.id) {
+      this._selection = selectionOf(this.programId); // an unknown id falls back to the first program (reconcileSelection)
+      if (!this._store.getState().loading) this._onState(this._store.getState()); // before the first read there are no programs to reconcile with
+    }
     if (!changed.has("hass") || !this.hass) return;
     this._store.setHass(this.hass);
     this.toggleAttribute("dark", this.hass.themes?.darkMode === true);

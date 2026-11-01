@@ -30,7 +30,8 @@ const FORBIDDEN = [
   [/\beval\s*\(/, "eval", "eval(x)", "evaluate(x)"],
   [/new\s+Function\b|\bFunction\s*\(/, "new Function", "new Function('return 1')", "const fn = () => 1"],
   [/setTimeout\s*\(\s*["'`]|setInterval\s*\(\s*["'`]/, "string timers", "setTimeout('go()', 10)", "setTimeout(go, 10)"],
-  [/https?:\/\/(?!www\.w3\.org)/, "an absolute URL (no CDN, no network from the frontend)", "fetch('https://example.com/x')", "xmlns='http://www.w3.org/2000/svg'"],
+  // the one allowed link is the documentation of this project, shown in the card picker (never fetched)
+  [/https?:\/\/(?!www\.w3\.org|github\.com\/alexcoscia\/cronotermostato[#"'`/])/, "an absolute URL (no CDN, no network from the frontend)", "fetch('https://example.com/x')", "xmlns='http://www.w3.org/2000/svg'"],
   [/\bimport\s*\(\s*["'`]https?:/, "import from the network", "import('https://cdn.example/x.js')", "import('./x.js')"],
 ];
 

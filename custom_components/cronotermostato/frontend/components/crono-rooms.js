@@ -24,6 +24,8 @@ export class CronoRooms extends LitElement {
     refresh: { attribute: false }, // () => Promise: read the state again
     getState: { attribute: false }, // () => the state of the store as it is now (after `refresh`)
     dirty: { type: Boolean }, // the draft of the program has unsaved changes
+    compact: { type: Boolean }, // the Lovelace card: no heading or hint (the card has its own)
+    filter: { attribute: false }, // (rows) => rows: which rooms to show (the card's filters); null = all
     _notice: { state: true },
     _busy: { state: true },
     _errors: { state: true },
@@ -82,6 +84,8 @@ export class CronoRooms extends LitElement {
     this.refresh = async () => {};
     this.getState = () => this.state;
     this.dirty = false;
+    this.compact = false;
+    this.filter = null;
     this._notice = null;
     this._guard = createGuard();
     this._busy = {};
@@ -104,7 +108,8 @@ export class CronoRooms extends LitElement {
   }
 
   _rows() {
-    return roomRows({ hass: this.hass, rooms: this.state?.rooms, programs: this.state?.programs, programId: this._programId });
+    const rows = roomRows({ hass: this.hass, rooms: this.state?.rooms, programs: this.state?.programs, programId: this._programId });
+    return typeof this.filter === "function" ? this.filter(rows) : rows;
   }
 
   _setBusy(id, on) {
@@ -235,14 +240,14 @@ export class CronoRooms extends LitElement {
     const loading = this.state?.loading === true && rows.length === 0;
     const manualRow = this._manual ? (rows.find((r) => r.id === this._manual.id) ?? null) : null;
     return html`
-      <h3 id="rooms-title">${t("room.title")}</h3>
-      <p class="muted">${this.canEdit ? t("room.hint") : t("room.read_only")}</p>
+      ${this.compact ? nothing : html`<h3 id="rooms-title">${t("room.title")}</h3>
+      <p class="muted">${this.canEdit ? t("room.hint") : t("room.read_only")}</p>`}
       ${this._notice ? html`<p class="msg warn" role="status">${iconWarn()}<span>${this._notice}</span></p>` : nothing}
       ${loading
         ? html`<p class="msg" role="status">${t("common.loading")}</p>`
         : rows.length === 0
           ? html`<p class="msg">${t("room.none")}</p>`
-          : html`<ul class="rooms" aria-labelledby="rooms-title">
+          : html`<ul class="rooms" aria-label=${t("room.title")}>
               ${rows.map(
                 (row) => html`<li>
                   <crono-room-card
