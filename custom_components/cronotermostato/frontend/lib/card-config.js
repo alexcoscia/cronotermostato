@@ -13,6 +13,8 @@
 // The default is "rooms": the compact view is what a dashboard usually needs (status and forcing),
 // and it is cheap; the full editor in a card is a deliberate choice.
 
+import { roomRows } from "./rooms.js";
+
 export const VIEWS = ["rooms", "editor"];
 export const DEFAULT_VIEW = "rooms";
 
@@ -61,4 +63,33 @@ export function normalizeConfig(config) {
 export function cardRows(rows, config) {
   const wanted = config.rooms === null ? null : new Set(config.rooms);
   return rows.filter((row) => row.server !== null && (wanted === null || wanted.has(row.id)) && (config.program_id === null || row.server.program_id === config.program_id));
+}
+
+// The parts of `hass` that change what the compact view shows. HA replaces `hass` at EVERY state
+// change of the house, so the rows are recomputed only when one of these changed (by identity).
+const HASS_KEYS = ["language", "locale", "themes", "config", "entities", "devices", "areas"];
+
+/**
+ * Memoizes the rows of the card. Call it with {hass, rooms, programs, config}; it returns
+ * {rows, hass}: the rows (same array while nothing relevant changed) and the `hass` to hand to
+ * the children (the one the rows were computed with, so they do not render again for the
+ * unrelated state changes of the house). Relevant: the state objects of the assigned `climate`
+ * rooms, the keys in HASS_KEYS, and the `rooms`/`programs` of the store and the card config.
+ * `compute` is only for tests.
+ */
+export function createRowsMemo(compute = ({ hass, rooms, programs }) => roomRows({ hass, rooms, programs, programId: null })) {
+  let last = null;
+  let result = null;
+  return ({ hass, rooms, programs, config }) => {
+    if (last !== null && last.rooms === rooms && last.programs === programs && last.config === config && sameHass(last, hass)) return result;
+    const ids = (Array.isArray(rooms) ? rooms : []).map((room) => room.climate_entity_id);
+    last = { rooms, programs, config, ids, states: ids.map((id) => hass?.states?.[id]), keys: HASS_KEYS.map((key) => hass?.[key]) };
+    result = { rows: cardRows(compute({ hass, rooms, programs }), config), hass };
+    return result;
+  };
+}
+
+function sameHass(last, hass) {
+  if (!last.keys.every((value, i) => value === hass?.[HASS_KEYS[i]])) return false;
+  return last.ids.every((id, i) => last.states[i] === hass?.states?.[id]);
 }

@@ -294,6 +294,11 @@ somewhere; its header lists the exact packages, their integrity hashes, the buil
 checksum of the body, which `tests/frontend/lit.test.mjs` verifies. There is no build step in this
 repository.
 
+The Lovelace card announces `https://github.com/alexcoscia/cronotermostato#readme` as its
+documentation link in the card picker (`documentationURL`). The GitHub repository does not exist
+yet, so that URL is provisional: change it in `frontend/components/crono-card.js` (and in the exact
+URL that `tests/frontend/xss.test.mjs` allows) when the repository is published.
+
 ## License
 
 MIT

@@ -223,7 +223,7 @@ export default {
   "card.program_hint_rooms": "Shows only the rooms that follow this program.",
   "card.program_hint_editor": "Opens this program directly.",
   "card.rooms": "Rooms to show",
-  "card.rooms_hint": "If you choose none, the card shows every room that follows a program.",
+  "card.rooms_hint": "Rooms that do not follow any program do not appear in the card, even if you choose them here. If you choose none, the card shows every room that follows a program.",
   "card.rooms_none": "There is no room with a thermostat in Home Assistant.",
   "card.room_missing": "{id} (not found)",
 };

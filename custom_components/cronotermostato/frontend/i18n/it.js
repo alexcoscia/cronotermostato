@@ -223,7 +223,7 @@ export default {
   "card.program_hint_rooms": "Mostra solo le stanze che seguono questo programma.",
   "card.program_hint_editor": "Apre direttamente questo programma.",
   "card.rooms": "Stanze da mostrare",
-  "card.rooms_hint": "Se non ne scegli nessuna, la scheda mostra tutte le stanze che seguono un programma.",
+  "card.rooms_hint": "Le stanze che non seguono nessun programma non compaiono nella scheda, anche se le scegli qui. Se non ne scegli nessuna, la scheda mostra tutte le stanze che seguono un programma.",
   "card.rooms_none": "In Home Assistant non c'è nessuna stanza con un termostato.",
   "card.room_missing": "{id} (non trovata)",
 };

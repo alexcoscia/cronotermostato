@@ -200,3 +200,43 @@ export function createStore({ debounceMs = DEBOUNCE_MS, maxWaitMs = MAX_WAIT_MS,
     refresh,
   };
 }
+
+/**
+ * One store for every Lovelace card on the page: a dashboard with several cards then makes ONE
+ * websocket subscription and ONE `state` read instead of one per card. Reference counted:
+ * the first `acquire` starts the store, the last `release` stops it (no listener, timer or
+ * subscription left); a later `acquire` starts it again. `make` is only for tests.
+ * (The full editor, in the panel or inside a card, keeps a store of its own: it is a single
+ * long-lived instance and it also needs `stop()` to be independent of the cards.)
+ */
+export function createSharedStore(make = createStore) {
+  let store = null;
+  let refs = 0;
+  return {
+    /** Takes a reference; starts the store with the first one. Returns the store. */
+    acquire(hass) {
+      store ??= make();
+      store.setHass(hass);
+      if (refs === 0) store.start(hass);
+      refs += 1;
+      return store;
+    },
+    /** Gives the reference back; stops the store with the last one. Extra calls are ignored. */
+    release() {
+      if (refs === 0) return;
+      refs -= 1;
+      if (refs === 0) store.stop();
+    },
+    /** The store without taking a reference (to read its state before the card is connected). */
+    peek() {
+      store ??= make();
+      return store;
+    },
+    get refs() {
+      return refs;
+    },
+  };
+}
+
+/** The store shared by the cards of this page. */
+export const sharedStore = createSharedStore();

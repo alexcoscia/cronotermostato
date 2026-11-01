@@ -11,6 +11,7 @@ import { loadState } from "../lib/api.js";
 import { climateRooms } from "../lib/climate.js";
 import { VIEWS, DEFAULT_VIEW } from "../lib/card-config.js";
 
+const MAX_ATTEMPTS = 2; // the first read and one retry
 const OPTIONS = ["title", "program_id", "rooms"];
 
 export class CronoCardEditor extends LitElement {
@@ -78,6 +79,8 @@ export class CronoCardEditor extends LitElement {
     this._config = { view: DEFAULT_VIEW };
     this._programs = null;
     this._loaded = false;
+    this._loading = false;
+    this._attempts = 0;
   }
 
   /** Called by Home Assistant; never throws (the editor must open even on a configuration the card refuses). */
@@ -86,17 +89,25 @@ export class CronoCardEditor extends LitElement {
   }
 
   willUpdate(changed) {
-    if (changed.has("hass") && this.hass && !this._loaded) {
-      this._loaded = true;
-      loadState(this.hass).then(
-        (state) => {
-          this._programs = state.programs.map((p) => ({ id: p.program_id ?? p.id, name: String(p.name ?? "") }));
-        },
-        () => {
-          this._programs = null;
-        },
-      );
-    }
+    if (changed.has("hass") && this.hass && !this._loaded && !this._loading && this._attempts < MAX_ATTEMPTS) this._loadPrograms();
+  }
+
+  // One read of the programs for the dropdown; if it fails, ONE more attempt the next time `hass`
+  // changes (HA replaces it often). Never a loop; after that the text field stays.
+  _loadPrograms() {
+    this._loading = true;
+    this._attempts += 1;
+    loadState(this.hass).then(
+      (state) => {
+        this._loading = false;
+        this._loaded = true;
+        this._programs = state.programs.map((p) => ({ id: p.program_id ?? p.id, name: String(p.name ?? "") }));
+      },
+      () => {
+        this._loading = false;
+        this._programs = null;
+      },
+    );
   }
 
   get _view() {

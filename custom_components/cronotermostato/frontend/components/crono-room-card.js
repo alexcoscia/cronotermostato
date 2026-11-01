@@ -19,6 +19,7 @@ export class CronoRoomCard extends LitElement {
     canEdit: { type: Boolean },
     busy: { type: Boolean },
     error: { type: String },
+    compact: { type: Boolean, reflect: true }, // denser layout for the Lovelace card (CSS only: same content, same logic)
   };
 
   static styles = [
@@ -191,6 +192,36 @@ export class CronoRoomCard extends LitElement {
           flex: 1 1 100%;
         }
       }
+      /* Compact (Lovelace card): name and area on one line, no "then" line, Force/Pause side by side.
+         Buttons keep their 44 px height; only the padding and the gaps shrink. */
+      :host([compact]) .room {
+        gap: 4px;
+        padding: 8px 0;
+      }
+      :host([compact]) .id {
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: 0 8px;
+      }
+      :host([compact]) .next {
+        display: none;
+      }
+      :host([compact]) .bands {
+        gap: 0;
+      }
+      :host([compact]) .acts {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 6px;
+      }
+      :host([compact]) .acts .btn {
+        min-width: 0;
+        padding: 0 8px;
+      }
+      :host([compact]) .acts .btn.primary {
+        grid-column: 1 / -1;
+      }
     `,
   ];
 
@@ -201,6 +232,7 @@ export class CronoRoomCard extends LitElement {
     this.canEdit = false;
     this.busy = false;
     this.error = null;
+    this.compact = false;
   }
 
   _emit(name) {
@@ -254,7 +286,7 @@ export class CronoRoomCard extends LitElement {
         ${slot
           ? html`<div class="bands">
               <span>${iconMode(slot.mode)}${t("room.now", { text: [settingText(t, slot, zone), until].filter(Boolean).join(" · ") })}</span>
-              ${next ? html`<span class="muted">${next}</span>` : nothing}
+              ${next ? html`<span class="muted next">${next}</span>` : nothing}
             </div>`
           : nothing}
         ${this.error ? html`<p class="msg error" role="alert">${iconWarn()}<span>${this.error}</span></p>` : nothing}

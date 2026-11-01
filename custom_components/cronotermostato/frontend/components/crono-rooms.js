@@ -26,6 +26,7 @@ export class CronoRooms extends LitElement {
     dirty: { type: Boolean }, // the draft of the program has unsaved changes
     compact: { type: Boolean }, // the Lovelace card: no heading or hint (the card has its own)
     filter: { attribute: false }, // (rows) => rows: which rooms to show (the card's filters); null = all
+    rows: { attribute: false }, // rows already computed by the parent (the card memoizes them); null = compute here
     _notice: { state: true },
     _busy: { state: true },
     _errors: { state: true },
@@ -86,6 +87,7 @@ export class CronoRooms extends LitElement {
     this.dirty = false;
     this.compact = false;
     this.filter = null;
+    this.rows = null;
     this._notice = null;
     this._guard = createGuard();
     this._busy = {};
@@ -108,6 +110,7 @@ export class CronoRooms extends LitElement {
   }
 
   _rows() {
+    if (Array.isArray(this.rows)) return this.rows;
     const rows = roomRows({ hass: this.hass, rooms: this.state?.rooms, programs: this.state?.programs, programId: this._programId });
     return typeof this.filter === "function" ? this.filter(rows) : rows;
   }
@@ -254,6 +257,7 @@ export class CronoRooms extends LitElement {
                     .hass=${this.hass}
                     .row=${row}
                     .canEdit=${this.canEdit}
+                    ?compact=${this.compact}
                     .busy=${this._busy[row.id] === true}
                     .error=${this._errors[row.id] ?? null}
                     @crono-room-toggle=${this._onToggle}

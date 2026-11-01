@@ -31,7 +31,7 @@ const FORBIDDEN = [
   [/new\s+Function\b|\bFunction\s*\(/, "new Function", "new Function('return 1')", "const fn = () => 1"],
   [/setTimeout\s*\(\s*["'`]|setInterval\s*\(\s*["'`]/, "string timers", "setTimeout('go()', 10)", "setTimeout(go, 10)"],
   // the one allowed link is the documentation of this project, shown in the card picker (never fetched)
-  [/https?:\/\/(?!www\.w3\.org|github\.com\/alexcoscia\/cronotermostato[#"'`/])/, "an absolute URL (no CDN, no network from the frontend)", "fetch('https://example.com/x')", "xmlns='http://www.w3.org/2000/svg'"],
+  [/https?:\/\/(?!www\.w3\.org|github\.com\/alexcoscia\/cronotermostato#readme["'`])/, "an absolute URL (no CDN, no network from the frontend)", "fetch('https://example.com/x')", "documentationURL: 'https://github.com/alexcoscia/cronotermostato#readme'"],
   [/\bimport\s*\(\s*["'`]https?:/, "import from the network", "import('https://cdn.example/x.js')", "import('./x.js')"],
 ];
 
@@ -62,5 +62,14 @@ test("the scanner itself catches every forbidden construct and lets harmless cod
   const labels = FORBIDDEN.map(([, label]) => label);
   for (const needed of ["srcdoc", "DOMParser", "createContextualFragment", 'setAttribute("on…")', "outerHTML", "document.write", "innerHTML"]) {
     assert.ok(labels.includes(needed), needed);
+  }
+});
+
+test("only the exact documentation URL is allowed, not other paths or hosts of the same account", () => {
+  const [pattern] = FORBIDDEN.find(([, label]) => label.startsWith("an absolute URL"));
+  assert.doesNotMatch("'https://github.com/alexcoscia/cronotermostato#readme'", pattern);
+  assert.doesNotMatch("'http://www.w3.org/2000/svg'", pattern);
+  for (const bad of ["'https://github.com/alexcoscia/cronotermostato'", "'https://github.com/alexcoscia/cronotermostato/raw/main/x.js'", "'https://github.com/alexcoscia/other#readme'", "'https://evil.example/github.com/alexcoscia/cronotermostato#readme'"]) {
+    assert.match(bad, pattern, bad);
   }
 });
