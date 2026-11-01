@@ -16,16 +16,22 @@ function files(dir) {
   });
 }
 
+// [pattern, label, a line that must match, a harmless line that must not]
 const FORBIDDEN = [
-  [/unsafeHTML|unsafeSVG|unsafeStatic|unsafe-html/, "unsafe Lit directives"],
-  [/\.innerHTML|\binnerHTML\b|\.outerHTML|\bouterHTML\b/, "innerHTML/outerHTML"],
-  [/insertAdjacentHTML/, "insertAdjacentHTML"],
-  [/document\.write/, "document.write"],
-  [/\beval\s*\(/, "eval"],
-  [/new\s+Function\b|\bFunction\s*\(/, "new Function"],
-  [/setTimeout\s*\(\s*["'`]|setInterval\s*\(\s*["'`]/, "string timers"],
-  [/https?:\/\/(?!www\.w3\.org)/, "an absolute URL (no CDN, no network from the frontend)"],
-  [/\bimport\s*\(\s*["'`]https?:/, "import from the network"],
+  [/unsafeHTML|unsafeSVG|unsafeStatic|unsafe-html/, "unsafe Lit directives", "html`${unsafeHTML(name)}`", "html`${name}`"],
+  [/\binnerHTML\b/, "innerHTML", "el.innerHTML = x", "el.textContent = x"],
+  [/\bouterHTML\b/, "outerHTML", "el.outerHTML = x", "el.tagName"],
+  [/insertAdjacentHTML/, "insertAdjacentHTML", "el.insertAdjacentHTML('beforeend', x)", "el.append(x)"],
+  [/document\s*\.\s*write(ln)?\s*\(/, "document.write", "document.write(x)", "document.title = x"],
+  [/\bsrcdoc\b/, "srcdoc", "frame.srcdoc = x", "frame.src = 'about:blank'"],
+  [/\bDOMParser\b/, "DOMParser", "new DOMParser().parseFromString(x, 'text/html')", "new URLSearchParams(x)"],
+  [/createContextualFragment/, "createContextualFragment", "range.createContextualFragment(x)", "range.selectNode(x)"],
+  [/setAttribute\s*\(\s*(["'`])\s*on/i, 'setAttribute("on…")', 'el.setAttribute("onclick", x)', 'el.setAttribute("aria-label", x)'],
+  [/\beval\s*\(/, "eval", "eval(x)", "evaluate(x)"],
+  [/new\s+Function\b|\bFunction\s*\(/, "new Function", "new Function('return 1')", "const fn = () => 1"],
+  [/setTimeout\s*\(\s*["'`]|setInterval\s*\(\s*["'`]/, "string timers", "setTimeout('go()', 10)", "setTimeout(go, 10)"],
+  [/https?:\/\/(?!www\.w3\.org)/, "an absolute URL (no CDN, no network from the frontend)", "fetch('https://example.com/x')", "xmlns='http://www.w3.org/2000/svg'"],
+  [/\bimport\s*\(\s*["'`]https?:/, "import from the network", "import('https://cdn.example/x.js')", "import('./x.js')"],
 ];
 
 const sources = files(ROOT).filter((path) => relative(ROOT, path) !== "lit.js");
@@ -47,8 +53,13 @@ for (const [pattern, label] of FORBIDDEN) {
   });
 }
 
-test("the scanner itself catches a forbidden construct", () => {
-  assert.match("el.innerHTML = x", FORBIDDEN[1][0]);
-  assert.match("html`${unsafeHTML(name)}`", FORBIDDEN[0][0]);
-  assert.match("new Function('return 1')", FORBIDDEN[5][0]);
+test("the scanner itself catches every forbidden construct and lets harmless code through", () => {
+  for (const [pattern, label, bad, good] of FORBIDDEN) {
+    assert.match(bad, pattern, `${label}: must match "${bad}"`);
+    assert.doesNotMatch(good, pattern, `${label}: must not match "${good}"`);
+  }
+  const labels = FORBIDDEN.map(([, label]) => label);
+  for (const needed of ["srcdoc", "DOMParser", "createContextualFragment", 'setAttribute("on…")', "outerHTML", "document.write", "innerHTML"]) {
+    assert.ok(labels.includes(needed), needed);
+  }
 });

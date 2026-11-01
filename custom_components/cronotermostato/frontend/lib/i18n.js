@@ -14,6 +14,22 @@ export function languageOf(hass) {
   return typeof raw === "string" && raw ? raw.toLowerCase().split(/[-_]/)[0] : FALLBACK;
 }
 
+/** The locale of HA for numbers and dates (`hass.locale.language`, then `hass.language`), "en" when unknown or not valid. Never the one of the browser. */
+export function localeOf(hass) {
+  const raw = hass?.locale?.language ?? hass?.language;
+  if (typeof raw !== "string" || !raw) return FALLBACK;
+  try {
+    return Intl.getCanonicalLocales(raw)[0];
+  } catch {
+    return FALLBACK;
+  }
+}
+
+/** A number in the language of HA. */
+export function formatNumber(hass, value, options = {}) {
+  return Number(value).toLocaleString(localeOf(hass), options);
+}
+
 const lookup = (language, key) => {
   const table = Object.hasOwn(TABLES, language) ? TABLES[language] : null;
   return table && Object.hasOwn(table, key) ? table[key] : undefined;

@@ -93,7 +93,7 @@ export class CronoWeekTabs extends LitElement {
         place-items: center;
         border-radius: 999px;
         background: var(--crono-error);
-        color: #fff;
+        color: var(--crono-error-bg);
       }
       .bang .ic {
         width: 13px;
@@ -176,7 +176,7 @@ export class CronoWeekTabs extends LitElement {
               <div class="strip" aria-hidden="true">
                 ${stripSegments(day.rows).map((seg) => {
                   const row = day.rows[seg.index];
-                  const cls = [`b-${MODES.includes(row.mode) ? row.mode : "off"}`, row.auto ? "is-auto" : "", "s"].filter(Boolean).join(" ");
+                  const cls = [`b-${MODES.includes(row.mode) ? row.mode : "off"}`, row.auto ? "is-auto hatch" : "", "s"].filter(Boolean).join(" ");
                   return html`<span class=${cls} style=${styleMap({ left: `${seg.left}%`, width: `${seg.width}%` })}>${seg.width >= 9 ? iconMode(row.mode) : nothing}</span>`;
                 })}
               </div>

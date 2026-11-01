@@ -30,6 +30,8 @@ import {
   createPreviewer,
   roomWarnings,
   dayLabel,
+  syncAction,
+  revisionsToIgnore,
 } from "../lib/day-editing.js";
 import { sortPrograms, reconcileSelection, reconcileAfterDelete, neighbourId, selectionOf, pendingSelection, loadStoredSelection, storeSelection } from "../lib/program-list.js";
 import "./crono-program-list.js";
@@ -262,7 +264,8 @@ export class CronoEditor extends LitElement {
     this._copy = null; // {from, targets: number[]}
     this._copyDone = null;
     this._switch = null; // {id, pending}: a change of program waiting for the answer about unsaved changes
-    this._ignoreRevision = null;
+    this._ignored = new Set(); // revisions a late read may still bring: ours before the save, the other editor's that we overwrote
+    this._conflicts = new Set(); // revisions seen while a conflict was open
     this._previewer = createPreviewer({
       preview: (bands) => previewDay(this.hass, bands),
       onResult: (day, bands) => {
@@ -335,7 +338,8 @@ export class CronoEditor extends LitElement {
     this._saveError = null;
     this._conflict = false;
     this._previewError = null;
-    this._ignoreRevision = null;
+    this._ignored = new Set();
+    this._conflicts = new Set();
   }
 
   _clearDraft() {
@@ -358,13 +362,14 @@ export class CronoEditor extends LitElement {
       return;
     }
     const revision = server.revision ?? null;
-    if (revision === this._original.revision) {
-      this._ignoreRevision = null;
-      return;
+    const { action, ignored } = syncAction({ revision, original: this._original.revision, ignored: this._ignored, dirty: isDirty(this._draft, this._original) });
+    this._ignored = ignored;
+    if (action === "conflict") {
+      this._conflicts.add(revision);
+      this._conflict = true;
+    } else if (action === "reload") {
+      this._loadDraft(server);
     }
-    if (revision === this._ignoreRevision) return; // a read made before our own save
-    if (isDirty(this._draft, this._original)) this._conflict = true;
-    else this._loadDraft(server);
   }
 
   get _dirty() {
@@ -409,7 +414,7 @@ export class CronoEditor extends LitElement {
     if (!added) return;
     this._edit(this._day, added.bands);
     await this.updateComplete;
-    this.renderRoot.querySelector("crono-day")?.focusBand(added.key);
+    this.renderRoot.querySelector("crono-day")?.focusBand(added.key, { added: true });
   };
 
   _onDaySelect = (event) => {
@@ -429,20 +434,25 @@ export class CronoEditor extends LitElement {
   _save = async (overwrite = false) => {
     if (!this._draft || this._saving) return;
     const server = this._state.programs.find((p) => idOf(p) === this._draft.id);
+    const startedFrom = this._original.revision;
     const request = saveRequest(this._draft, { id: this._draft.id, name: server?.name ?? this._draft.name });
     if (overwrite) request.expectedRevision = undefined;
     this._saving = true;
     this._saveError = null;
     try {
       const result = await saveProgram(this.hass, request);
-      this._ignoreRevision = this._original.revision;
+      this._ignored = revisionsToIgnore({ ignored: this._ignored, savedFrom: startedFrom, conflicts: this._conflicts });
+      this._conflicts = new Set();
       this._draft = { ...this._draft, revision: result.revision };
       this._original = { ...deserializeProgram({ program_id: this._draft.id, name: request.name, revision: result.revision, week: request.week, holiday: request.holiday }) };
       this._conflict = false;
       this._saved = true;
       this._store.refresh();
     } catch (err) {
-      if (err?.code === "conflict") this._conflict = true;
+      if (err?.code === "conflict") {
+        this._conflict = true;
+        if (server?.revision !== undefined) this._conflicts.add(server.revision);
+      }
       else this._saveError = err;
     } finally {
       this._saving = false;
@@ -624,6 +634,7 @@ export class CronoEditor extends LitElement {
               </span>
             </div>`
           : nothing}
+        <div class="sr" role="status" aria-live="polite" aria-atomic="true">${blocked ? tn(this.hass, "editor.errors", summary.length) : ""}</div>
         ${blocked ? this._renderErrors(t, draft, summary, language) : nothing}
         <crono-week-tabs .hass=${this.hass} .days=${days} .selected=${current.id} @crono-day-select=${this._onDaySelect}></crono-week-tabs>
         <hr class="sep" />
@@ -657,8 +668,10 @@ export class CronoEditor extends LitElement {
             ${this._copyDone ? html` <span class="muted">${tn(this.hass, "copy.done", this._copyDone)}</span>` : nothing}
           </span>
           <span class="btns">
-            <button class="btn" type="button" ?disabled=${!dirty || this._saving} @click=${this._discard}>${t("editor.discard")}</button>
-            <button class="btn primary" type="button" ?disabled=${!canSave} aria-describedby=${blocked ? "week-errors" : nothing} @click=${() => this._save()}>${t("common.save")}</button>
+            ${readOnly
+              ? nothing
+              : html`<button class="btn" type="button" ?disabled=${!dirty || this._saving} @click=${this._discard}>${t("editor.discard")}</button>
+                  <button class="btn primary" type="button" ?disabled=${!canSave} aria-describedby=${blocked ? "week-errors" : nothing} @click=${() => this._save()}>${t("common.save")}</button>`}
           </span>
         </div>
       </section>
@@ -673,6 +686,8 @@ export class CronoEditor extends LitElement {
       const band = e.key ? getDay(draft, e.day).find((b) => b.key === e.key) : null;
       return band ? t("editor.error_line", { day, start: String(band.start), end: String(band.end), message }) : t("editor.error_line_day", { day, message });
     });
+    // Not a live region itself: the count is announced by the hidden status above (always in the page,
+    // so the change is spoken), and the lines are reached from the Save button and from each field.
     return html`<div class="msg error" id="week-errors" role="group" aria-label=${tn(this.hass, "editor.errors", summary.length)}>
       ${iconWarn()}
       <span>

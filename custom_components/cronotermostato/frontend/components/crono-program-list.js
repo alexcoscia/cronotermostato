@@ -139,6 +139,9 @@ export class CronoProgramList extends LitElement {
       .row:hover {
         background: var(--crono-surface2);
       }
+      .row:hover .meta {
+        color: var(--crono-text); /* the muted colour of some themes is under 4.5:1 on the hover background */
+      }
       .row.selected {
         border-color: var(--crono-accent);
         box-shadow: inset 4px 0 0 var(--crono-accent), 0 0 0 1px var(--crono-accent);

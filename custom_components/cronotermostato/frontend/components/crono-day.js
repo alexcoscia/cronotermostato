@@ -1,19 +1,22 @@
 // The day being edited: the big 0-24 bar (a segment per band, a button each) and
 // the list of the bands of the day. The rows shown are given by the editor
 // (`mergeDay`: bands of the user plus the calculated ones). The bar is a
-// shortcut: everything it does (choose a band) is also reachable in the list, and
-// nothing needs dragging.
+// shortcut for mouse and touch: its segments are not tab stops (tabindex -1), because
+// everything they do (choose a band) is reachable in the list; they keep a full label.
+// Nothing needs dragging.
 
 import { LitElement, html, css, nothing, repeat, styleMap } from "../lit.js";
 import { base, modeColors } from "../styles.js";
 import { iconPlus, iconCopy, iconAuto, iconMode, iconWarn } from "../icons.js";
-import { createT } from "../lib/i18n.js";
+import { createT, formatNumber } from "../lib/i18n.js";
 import { stripSegments, segmentDetail } from "../lib/day-editing.js";
 import "./crono-band-row.js";
 
 const MODES = ["heat", "cool", "off"];
 const HOURS = [0, 3, 6, 9, 12, 15, 18, 21, 24];
-const fmtTemp = (value) => (Number.isFinite(Number(value)) && value !== null && value !== "" ? `${Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 })}°` : "");
+const NOTICE_MS = 6000; // how long the announcement of an added band stays in the live region
+const FLASH_MS = 2500; // how long the highlight of an added band lasts
+const fmtTemp = (hass, value) => (Number.isFinite(Number(value)) && value !== null && value !== "" ? `${formatNumber(hass, value, { maximumFractionDigits: 2 })}°` : "");
 
 export class CronoDay extends LitElement {
   static properties = {
@@ -28,6 +31,8 @@ export class CronoDay extends LitElement {
     canAdd: { type: Boolean },
     _selected: { state: true },
     _barPx: { state: true },
+    _flash: { state: true },
+    _notice: { state: true },
   };
 
   static styles = [
@@ -119,6 +124,19 @@ export class CronoDay extends LitElement {
         box-shadow: 0 0 0 3px var(--crono-focus);
         z-index: 2;
       }
+      /* Calculated: dashed border plus stripes in a strip at the foot, never behind the text. */
+      .seg.is-auto {
+        padding-bottom: 9px;
+      }
+      .seg.is-auto::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: 7px;
+        background: repeating-linear-gradient(135deg, currentColor 0 2px, transparent 2px 6px);
+      }
       .seg.err {
         outline: 2px solid var(--crono-error);
         outline-offset: -3px;
@@ -168,6 +186,9 @@ export class CronoDay extends LitElement {
     this._selected = null;
     this._barPx = 0;
     this._observer = null;
+    this._flash = null; // key of the band just added (highlighted for a moment)
+    this._notice = ""; // text for the live region
+    this._timers = [];
   }
 
   firstUpdated() {
@@ -184,20 +205,45 @@ export class CronoDay extends LitElement {
     super.disconnectedCallback();
     this._observer?.disconnect();
     this._observer = null;
+    this._timers.forEach(clearTimeout);
+    this._timers = [];
   }
 
-  /** Focus the first field of a band (after adding one). */
-  async focusBand(key) {
+  _later(fn, ms) {
+    this._timers.push(setTimeout(fn, ms));
+  }
+
+  /**
+   * Select a band and move the focus to it. `added`: it was just added, so the first field gets
+   * the focus (to type the times), the row is highlighted and "band added" is announced.
+   * Otherwise (a bar segment was chosen) the row itself gets the focus: no keyboard on a phone.
+   */
+  async focusBand(key, { added = false } = {}) {
     this._selected = key;
+    if (added) this._announceAdded(key);
     await this.updateComplete;
     for (const row of this.renderRoot.querySelectorAll("crono-band-row")) {
       if (row.band?.key === key) {
         await row.updateComplete;
-        row.focusFirst();
+        if (added) row.focusFirst();
+        else row.focusRow();
         row.scrollIntoView?.({ block: "nearest" });
         return;
       }
     }
+  }
+
+  _announceAdded(key) {
+    const t = createT(this.hass);
+    const row = (this.rows ?? []).find((r) => r.key === key);
+    this._flash = key;
+    this._notice = "";
+    // the text is set one frame after it is emptied, so the same text is announced again
+    this._later(() => {
+      this._notice = row ? t("band.added_named", { start: String(row.start), end: String(row.end) }) : t("band.added");
+    }, 50);
+    this._later(() => (this._flash = null), FLASH_MS);
+    this._later(() => (this._notice = ""), NOTICE_MS);
   }
 
   _fire(name) {
@@ -206,7 +252,7 @@ export class CronoDay extends LitElement {
 
   _segmentLabel(t, row) {
     const mode = MODES.includes(row.mode) ? t(`mode.${row.mode}`) : "";
-    const temp = fmtTemp(row.temperature);
+    const temp = fmtTemp(this.hass, row.temperature);
     return [`${row.start}–${row.end}`, mode, temp ? `${temp}C` : "", row.preset ? String(row.preset) : "", row.auto ? t("band.calculated") : ""].filter(Boolean).join(", ");
   }
 
@@ -215,9 +261,11 @@ export class CronoDay extends LitElement {
     const detail = segmentDetail(px);
     const selected = this._selected === row.key;
     const cls = [`b-${MODES.includes(row.mode) ? row.mode : "off"}`, row.auto ? "is-auto" : "", errored ? "err" : "", "seg"].filter(Boolean).join(" ");
+    const temperature = fmtTemp(this.hass, row.temperature);
     const level = ["none", "icon", "temperature", "preset", "full"].indexOf(detail);
     return html`<button
       type="button"
+      tabindex="-1"
       class=${cls}
       style=${styleMap({ left: `${seg.left}%`, width: `${seg.width}%` })}
       aria-current=${selected ? "true" : "false"}
@@ -226,7 +274,7 @@ export class CronoDay extends LitElement {
       @click=${() => this._pick(row)}
     >
       ${level >= 1 ? iconMode(row.mode) : nothing}
-      ${level >= 2 && fmtTemp(row.temperature) ? html`<span class="t">${fmtTemp(row.temperature)}</span>` : nothing}
+      ${level >= 2 && temperature ? html`<span class="t">${temperature}</span>` : nothing}
       ${level >= 3 && row.preset ? html`<span class="p">${String(row.preset)}</span>` : nothing}
       ${level >= 4 && row.auto ? html`<span class="calc">${iconAuto()}${t("band.calculated")}</span>` : nothing}
     </button>`;
@@ -259,6 +307,7 @@ export class CronoDay extends LitElement {
           ${segments.map((seg) => this._segment(t, rows[seg.index], seg, (this.errors?.get(rows[seg.index].key) ?? []).length > 0))}
         </div>
       </div>
+      <span class="sr" role="status" aria-live="polite">${this._notice}</span>
       ${!hasUser ? html`<p class="info">${t("day.empty")}</p>` : nothing}
       ${!this.canAdd && !this.readOnly ? html`<p class="info">${iconWarn()}<span>${t("day.full")}</span></p>` : nothing}
       <ul class="list" aria-label=${t("day.bands")}>
@@ -275,6 +324,7 @@ export class CronoDay extends LitElement {
               .hasRooms=${this.hasRooms}
               .readOnly=${this.readOnly}
               ?selected=${this._selected === row.key}
+              ?highlight=${this._flash === row.key}
             ></crono-band-row>
           </li>`,
         )}

@@ -154,7 +154,7 @@ export function uniqueName(base, names) {
 
 /** True if another program (not `exceptId`) already has this name, ignoring case and extra spaces. */
 export function sameNameExists(name, programs, exceptId = null) {
-  const norm = (text) => String(text ?? "").trim().replace(/\s+/g, " ").toLocaleLowerCase();
+  const norm = (text) => String(text ?? "").trim().replace(/\s+/g, " ").toLowerCase();
   const wanted = norm(name);
   return wanted !== "" && programs.some((program) => idOf(program) !== exceptId && norm(program.name) === wanted);
 }

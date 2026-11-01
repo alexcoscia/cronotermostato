@@ -388,3 +388,28 @@ export function dayLabel(index, language = "en", style = "long") {
   const text = new Intl.DateTimeFormat(language, { weekday: style, timeZone: "UTC" }).format(new Date(Date.UTC(2024, 0, 1 + index)));
   return text.charAt(0).toLocaleUpperCase(language) + text.slice(1);
 }
+
+// ---- Revisions: telling our own save apart from someone else's -----------------------------------
+
+/**
+ * What to do with the program read from the server, given the revision we hold (`original`):
+ * `synced` (the same; the ignored revisions are no longer needed), `ignore` (a read made before
+ * a save of ours, or the state of the other editor that we chose to overwrite), `conflict`
+ * (someone else saved and we have unsaved edits) or `reload` (someone else saved, nothing to lose).
+ */
+export function syncAction({ revision, original, ignored, dirty }) {
+  if (revision === original) return { action: "synced", ignored: new Set() };
+  if (ignored.has(revision)) return { action: "ignore", ignored };
+  return { action: dirty ? "conflict" : "reload", ignored };
+}
+
+/**
+ * Revisions to ignore after a successful save: the one we started from, the ones that
+ * were in the way when the conflict came up (the other editor's, when we overwrite it),
+ * and what was ignored before. A read that was in flight can still bring any of them.
+ */
+export function revisionsToIgnore({ ignored, savedFrom, conflicts }) {
+  const out = new Set(ignored);
+  for (const revision of [savedFrom, ...conflicts]) if (revision !== null && revision !== undefined) out.add(revision);
+  return out;
+}

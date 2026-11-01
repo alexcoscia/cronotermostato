@@ -26,16 +26,16 @@ export const tokens = css`
     --crono-warn-bg: #ffefc2;
     --crono-heat: #7a4300;
     --crono-heat-bg: #fde8bd;
-    --crono-heat-line: #d99a2b;
+    --crono-heat-line: #9f6200;
     --crono-cool: #1b4a9e;
     --crono-cool-bg: #d8e6fd;
-    --crono-cool-line: #6c9be8;
+    --crono-cool-line: #2f64c0;
     --crono-off: #464e5b;
     --crono-off-bg: #e3e6ea;
-    --crono-off-line: #9aa3af;
+    --crono-off-line: #757f8e;
     --crono-ok: #0f6636;
     --crono-ok-bg: #d6f1e0;
-    --crono-hatch: rgba(27, 33, 41, 0.28);
+    --crono-field-line: #6f7a88;
     color: var(--crono-text);
   }
   :host([dark]) {
@@ -54,7 +54,7 @@ export const tokens = css`
     --crono-off-line: #6b7482;
     --crono-ok: #8be0ae;
     --crono-ok-bg: #123a24;
-    --crono-hatch: rgba(232, 236, 241, 0.3);
+    --crono-field-line: #8b94a1;
   }
 `;
 
@@ -171,7 +171,11 @@ export const base = css`
   }
 `;
 
-/** Colours of the modes on any element with the class b-heat / b-cool / b-off; hatched when calculated. */
+/**
+ * Colours of the modes on any element with the class b-heat / b-cool / b-off. A calculated
+ * element gets a dashed border; stripes (`hatch`) are only ever drawn in a narrow strip beside
+ * or below the text, or on elements that carry no text, never behind it.
+ */
 export const modeColors = css`
   .b-heat {
     background-color: var(--crono-heat-bg);
@@ -189,8 +193,11 @@ export const modeColors = css`
     border-color: var(--crono-off-line);
   }
   .is-auto {
-    background-image: repeating-linear-gradient(135deg, transparent 0 5px, var(--crono-hatch) 5px 6px);
     border-style: dashed;
+  }
+  /* Stripes in the colour of the mode (currentColor): for a strip or an element without text. */
+  .hatch {
+    background-image: repeating-linear-gradient(135deg, currentColor 0 2px, transparent 2px 6px);
   }
 `;
 
@@ -213,7 +220,7 @@ export const fields = css`
     width: 100%;
     min-width: 0;
     padding: 0 10px;
-    border: 1px solid var(--crono-line);
+    border: 1px solid var(--crono-field-line);
     border-radius: 8px;
     background: var(--crono-surface);
     color: var(--crono-text);
