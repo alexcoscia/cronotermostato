@@ -1,5 +1,6 @@
 """Tests for the room controller and the manager."""
 
+import asyncio
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
@@ -72,7 +73,7 @@ async def env(hass, freezer):
 
     def handler(name):
         async def _handle(call):
-            if name in e.fail:
+            if name in e.fail and call.data["entity_id"] == ROOM:
                 raise e.fail[name]
             key = "hvac_mode" if name == "set_hvac_mode" else "temperature"
             if call.data["entity_id"] != ROOM:
@@ -509,3 +510,163 @@ async def test_override_expiry_applies_current_slot(env):
     assert env.calls == HEAT_23
     assert manager.controllers[ROOM].state.manual is False
     assert ROOM not in env.store.overrides
+
+
+# -- unexpected errors, safe stop, races ---------------------------------
+
+
+@pytest.mark.parametrize(
+    "error", [TimeoutError("slow"), ValueError("bad"), KeyError("x")]
+)
+async def test_unexpected_error_is_isolated(env, error):
+    other = "climate.studio"  # sorted after the failing room
+    env.hass.states.async_set(other, "off", {"hvac_modes": ["heat", "off"]})
+    env.fail["set_temperature"] = error
+    await env.store.async_assign(ROOM, env.program_id)
+    await env.store.async_assign(other, env.program_id)
+    manager = await env.start()  # must not raise
+    assert manager.controllers[ROOM].state.status == "error"
+    assert manager.controllers[other].state.status == "ok"
+    assert (other, "set_temperature") in env.other_calls
+
+    del env.fail["set_temperature"]
+    env.calls.clear()
+    await env.go(at(26, 12))  # recovers at the next boundary
+    assert manager.controllers[ROOM].state.status == "ok"
+
+
+async def test_unexpected_error_in_evaluate_is_isolated(env, monkeypatch):
+    other = "climate.studio"
+    env.hass.states.async_set(other, "off", {"hvac_modes": ["heat", "off"]})
+    await env.store.async_assign(ROOM, env.program_id)
+    await env.store.async_assign(other, env.program_id)
+    original = RoomController._get_timeline
+
+    def broken(self, *, rebuild):
+        if self._climate_id == ROOM:
+            raise KeyError("boom")
+        return original(self, rebuild=rebuild)
+
+    monkeypatch.setattr(RoomController, "_get_timeline", broken)
+    manager = await env.start()  # must not raise
+    assert manager.controllers[ROOM].state.status == "error"
+    assert manager.controllers[other].state.status == "ok"
+
+
+async def test_sync_isolates_a_room_failing_to_start(env, monkeypatch):
+    other = "climate.studio"
+    env.hass.states.async_set(other, "off", {"hvac_modes": ["heat", "off"]})
+    await env.store.async_assign(ROOM, env.program_id)
+    await env.store.async_assign(other, env.program_id)
+
+    async def broken(self):
+        raise RuntimeError("boom")
+
+    original = RoomController.async_start
+
+    async def start(self):
+        if self._climate_id == ROOM:
+            await broken(self)
+        await original(self)
+
+    monkeypatch.setattr(RoomController, "async_start", start)
+    manager = await env.start()  # must not raise
+    assert manager.controllers[other].state.status == "ok"
+
+
+async def test_stop_during_override_cleanup_does_not_arm_or_command(env):
+    await env.store.async_assign(ROOM, env.program_id)
+    await env.store.async_set_override(ROOM, Override("heat", 25.0, at(26, 10)))
+    env.freezer.move_to(at(26, 11))  # expired by now
+    gate, entered = asyncio.Event(), asyncio.Event()
+    original = env.store.async_clear_override
+
+    async def slow_clear(cid):
+        entered.set()
+        await gate.wait()
+        await original(cid)
+
+    env.store.async_clear_override = slow_clear
+    controller = RoomController(env.hass, env.store, env.calendar, ROOM)
+    start = env.hass.async_create_task(controller.async_start())
+    await entered.wait()
+    await controller.async_stop()
+    gate.set()
+    await start
+    await env.hass.async_block_till_done()
+    assert controller._unsub_timer is None
+    assert env.calls == []
+
+
+async def test_stop_between_hvac_mode_and_temperature(env):
+    await env.store.async_assign(ROOM, env.program_id)
+    gate, entered = asyncio.Event(), asyncio.Event()
+    original = env.hass.services._services["climate"]["set_hvac_mode"].job.target
+
+    async def slow(call):
+        await original(call)
+        entered.set()
+        await gate.wait()
+
+    env.hass.services.async_register("climate", "set_hvac_mode", slow)
+    controller = RoomController(env.hass, env.store, env.calendar, ROOM)
+    start = env.hass.async_create_task(controller.async_start())
+    await entered.wait()
+    await controller.async_stop()
+    gate.set()
+    await start
+    await env.hass.async_block_till_done()
+    assert env.calls == [("set_hvac_mode", "heat")]  # no set_temperature
+    assert controller._unsub_timer is None
+
+
+async def test_pending_listener_task_after_stop_does_not_command(env):
+    await env.store.async_assign(ROOM, env.program_id)
+    await env.store.async_set_override(ROOM, Override("heat", 25.0, at(26, 9, 30)))
+    manager = await env.start()
+    controller = manager.controllers[ROOM]
+    env.calls.clear()
+    env.set_climate("unavailable", modes=())
+    await env.hass.async_block_till_done()
+    await controller._lock.acquire()  # an evaluation is "in progress"
+    env.set_climate("heat")  # the listener task queues behind the lock
+    await asyncio.sleep(0)
+    await controller.async_stop()
+    env.freezer.move_to(at(26, 10))  # the override is now expired
+    controller._lock.release()
+    await env.hass.async_block_till_done()
+    assert env.calls == []
+    assert ROOM in env.store.overrides  # a stopped controller touches nothing
+    assert controller._unsub_timer is None
+
+
+async def test_status_not_ok_forgets_what_was_applied(env):
+    """A thermostat that was away is re-commanded even on a quiet evaluation."""
+    await env.store.async_assign(ROOM, env.program_id)
+    manager = await env.start()
+    controller = manager.controllers[ROOM]
+    controller._unsub_state()  # evaluations driven by hand
+    controller._unsub_state = None
+    env.set_climate("unavailable", modes=())
+    await controller._async_evaluate(force=False)
+    assert controller.state.status == "unavailable"
+    env.calls.clear()
+    env.set_climate("heat")
+    await controller._async_evaluate(force=False)
+    assert env.calls == HEAT_23
+
+
+async def test_no_double_command_when_listener_queues_behind_lock(env):
+    """The store listener queued behind a running evaluation, then set_manual."""
+    await env.store.async_assign(ROOM, env.program_id)
+    manager = await env.start()
+    controller = manager.controllers[ROOM]
+    env.calls.clear()
+    await controller._lock.acquire()  # e.g. a timer evaluation in progress
+    task = env.hass.async_create_task(controller.async_set_manual("heat", 26.0))
+    for _ in range(10):
+        await asyncio.sleep(0)
+    controller._lock.release()
+    await task
+    await env.hass.async_block_till_done()
+    assert env.calls == [("set_hvac_mode", "heat"), ("set_temperature", 26.0)]

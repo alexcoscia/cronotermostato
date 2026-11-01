@@ -4,12 +4,16 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
+import logging
 
 from homeassistant.core import HomeAssistant, callback
 
 from .controller import RoomController
 from .engine.calendar import HolidayCalendar
 from .store import CronoStore
+
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class Manager:
@@ -56,13 +60,20 @@ class Manager:
                 return
             wanted = set(self._store.assignments)
             for climate_id in [c for c in self.controllers if c not in wanted]:
-                await self.controllers.pop(climate_id).async_stop()
+                controller = self.controllers.pop(climate_id)
+                try:
+                    await controller.async_stop()
+                except Exception:  # noqa: BLE001 - one room must not block the rest
+                    _LOGGER.exception("Cannot stop controller of %s", climate_id)
             for climate_id in sorted(wanted - set(self.controllers)):
                 controller = RoomController(
                     self._hass, self._store, self._calendar, climate_id
                 )
                 self.controllers[climate_id] = controller
-                await controller.async_start()
+                try:
+                    await controller.async_start()
+                except Exception:  # noqa: BLE001 - one room must not block the rest
+                    _LOGGER.exception("Cannot start controller of %s", climate_id)
 
     @callback
     def _store_changed(self) -> None:

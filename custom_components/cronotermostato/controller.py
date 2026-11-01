@@ -16,14 +16,28 @@ Design decisions:
 * A paused room is never commanded, even by ``async_set_manual`` (the
   override is stored and takes effect on resume).
 * Work triggered by synchronous listeners runs in tasks; evaluations are
-  serialised by a lock.
+  serialised by a lock. ``async_stop`` does not take the lock: ``_stopped`` is
+  rechecked after every await that matters, so a stopped controller neither
+  arms a timer nor sends a command.
+* Unexpected exceptions (not only ``HomeAssistantError``) from a climate
+  integration or from an evaluation never propagate: the room shows ``error``
+  and the other rooms are unaffected. ``asyncio.CancelledError`` is not caught.
+
+Known limits:
+
+* After ``error`` the next attempt happens only at the next slot boundary, when
+  the thermostat comes back, or on an explicit refresh. There is no periodic
+  retry.
+* An override whose command never went out (Home Assistant stopped between
+  saving it and commanding) is treated after a restart as already held by the
+  thermostat and is not re-sent.
 """
 
 from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 import logging
 from typing import Any, Literal
@@ -63,6 +77,8 @@ class RoomState:
     override_until: datetime | None = None
     status: RoomStatus = "unassigned"
     holiday: bool = False
+    """The local date of today is a holiday (not ``slot.holiday``, which
+    belongs to the first band of the merged slot)."""
 
 
 class RoomController:
@@ -172,7 +188,13 @@ class RoomController:
     @callback
     def _store_changed(self) -> None:
         if self._current_signature() != self._signature:
-            self._hass.async_create_task(self._async_evaluate(force=True, if_changed=True))
+            # Count the forced evaluation now, not when the task gets the
+            # lock: ``_async_apply_now`` must see it even if the task is still
+            # queued behind an evaluation in progress (no double command).
+            self._forced_evals += 1
+            self._hass.async_create_task(
+                self._async_evaluate(force=True, if_changed=True, counted=True)
+            )
 
     @callback
     def _climate_changed(self, event: Event[EventStateChangedData]) -> None:
@@ -180,7 +202,10 @@ class RoomController:
         if new is None or new.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
             return
         if old is None or old.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
-            self._hass.async_create_task(self._async_evaluate(force=True))
+            self._forced_evals += 1
+            self._hass.async_create_task(
+                self._async_evaluate(force=True, counted=True)
+            )
 
     async def _async_timer(self, point: datetime) -> None:
         self._unsub_timer = None
@@ -213,15 +238,22 @@ class RoomController:
         startup: bool = False,
         point: datetime | None = None,
         if_changed: bool = False,
+        counted: bool = False,
     ) -> None:
         async with self._lock:
             if self._stopped:
                 return
             if if_changed and self._current_signature() == self._signature:
                 return
-            if force:
+            if force and not counted:
                 self._forced_evals += 1
-            await self._evaluate(force, rebuild, startup, point)
+            try:
+                await self._evaluate(force, rebuild, startup, point)
+            except Exception:  # noqa: BLE001 - never propagate to callers/tasks
+                _LOGGER.exception("Unexpected error evaluating %s", self._climate_id)
+                self._last_applied = None
+                if not self._stopped:
+                    self._publish(replace(self.state, status="error"))
 
     async def _evaluate(
         self, force: bool, rebuild: bool, startup: bool, point: datetime | None
@@ -245,12 +277,15 @@ class RoomController:
         slot = timeline.slot_at(local_now)
         next_slot = timeline.slot_after(slot)
         override = store.overrides.get(cid)
-        expired = False
         if override is not None and override.until.astimezone(UTC) <= now:
             await store.async_clear_override(cid)
-            override, expired, force = None, True, True
+            if self._stopped:
+                return
+            override, force = None, True
         self._signature = self._current_signature()
 
+        if self._stopped:
+            return
         deadline = slot.end.astimezone(UTC)
         if override is not None:
             deadline = min(deadline, override.until.astimezone(UTC))
@@ -279,12 +314,13 @@ class RoomController:
                 else (slot.band.mode, slot.band.temperature)
             )
             key = (mode, temperature)
-            if startup and override is not None and not expired:
+            if startup and override is not None:
                 self._last_applied = key  # already held by the thermostat
             elif force or key != self._last_applied:
                 status = await self._apply(cstate.attributes, mode, temperature)
+                if self._stopped:
+                    return
                 self._last_applied = key if status == "ok" else None
-            del expired
 
         self._publish(
             RoomState(
@@ -304,6 +340,8 @@ class RoomController:
         if mode not in (attributes.get("hvac_modes") or []):
             _LOGGER.warning("%s does not support mode %s", self._climate_id, mode)
             return "unsupported_mode"
+        if self._stopped:
+            return "error"
         try:
             await self._hass.services.async_call(
                 "climate",
@@ -311,7 +349,7 @@ class RoomController:
                 {ATTR_ENTITY_ID: self._climate_id, "hvac_mode": mode},
                 blocking=True,
             )
-            if temperature is not None:
+            if temperature is not None and not self._stopped:
                 await self._hass.services.async_call(
                     "climate",
                     "set_temperature",
@@ -320,6 +358,9 @@ class RoomController:
                 )
         except HomeAssistantError as err:  # includes ServiceValidationError
             _LOGGER.warning("Cannot command %s: %s", self._climate_id, err)
+            return "error"
+        except Exception:  # noqa: BLE001 - any integration may raise anything
+            _LOGGER.exception("Unexpected error commanding %s", self._climate_id)
             return "error"
         return "ok"
 
