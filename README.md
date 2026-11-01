@@ -4,8 +4,9 @@ Home Assistant custom integration (HACS): reusable weekly thermostat programs
 (time slots with mode and temperature, plus a holiday day chosen by country),
 assigned to any number of `climate` entities ("rooms"), with a manual override.
 
-Status: version 0.1.0, not yet tested on a live Home Assistant. This is part 1 of 3
-(the integration); the in-HA editor and the Tessera tile are separate projects.
+Status: version 0.1.0, **not yet tested on a live Home Assistant** (neither the integration nor
+the editor). Parts 1 and 2 of 3 (the integration and its editor) are in this repository; the Tessera
+tile is a separate project.
 
 Requires Home Assistant 2026.10.0 or newer. The `holidays` Python library is
 installed automatically.
@@ -34,6 +35,75 @@ Only one instance can be configured. The setup asks for:
 Both can be changed later from the integration's **Configure** button; the
 integration reloads and recomputes every room. Times follow the Home Assistant
 time zone.
+
+## Options
+
+From the integration's **Configure** button (Settings -> Devices & services -> Cronotermostato):
+
+| Option | Default | What it does |
+| --- | --- | --- |
+| Country / Region | country of Home Assistant | Public holidays of every program (see above). |
+| **Show in sidebar** | on | Adds the editor to the sidebar as `/cronotermostato`. Turning it off removes the entry; the Lovelace card keeps working. |
+| **Administrators only** | on | Hides the sidebar entry from users who are not administrators, and makes the editor's write commands answer `unauthorized` for them (see Permissions). |
+
+Saving the options reloads the integration; reload the browser page to see the sidebar entry appear
+or disappear.
+
+## Editor
+
+The editor edits programs (days, slots, holiday part), assigns them to rooms, pauses a room and
+forces it manually. It works in two places, both loaded by the integration itself: **you do not
+add any Lovelace resource by hand**.
+
+- **Sidebar panel** "Cronotermostato" (icon `mdi:calendar-clock`), if *Show in sidebar* is on.
+- **Lovelace card** `cronotermostato-card`, listed as "Cronotermostato" in the card picker, with a
+  visual configuration editor. Options:
+
+  | Option | Meaning |
+  | --- | --- |
+  | `view` | `rooms` (default): compact status of the rooms that follow a program, with pause and manual override, read only. `editor`: the full editor inside the card. |
+  | `title` | Optional text above the card. |
+  | `program_id` | `rooms` view: only the rooms that run this program. `editor` view: opens this program. |
+  | `rooms` | `rooms` view: list of `climate.*` entity ids to show; empty or missing means all. |
+
+  ```yaml
+  type: custom:cronotermostato-card
+  view: rooms
+  title: Heating
+  rooms:
+    - climate.soggiorno
+  ```
+
+The editor texts are in Italian and English (they follow the language of the Home Assistant user).
+Colours come from the Home Assistant theme.
+
+### Permissions, and an honest limit
+
+- `admin_only` (default on) controls two things: whether the sidebar entry is visible to
+  non-administrators, and whether the editor's write commands (`save_program`, `delete_program`,
+  `assign`, `unassign` over the WebSocket) are accepted from a non-administrator
+  (`unauthorized` otherwise).
+- Pause, resume, manual override and "back to automatic" are open to every authenticated user, on
+  purpose: they are what a wall tile or a family member needs.
+- **The `cronotermostato.*` services are not restricted**: every authenticated user can call
+  `create_program`, `update_program`, `delete_program`, `assign` and `unassign` (for example from
+  Developer tools), whatever `admin_only` says. `admin_only` is not a security boundary.
+- Hiding the sidebar entry is only visibility: an administrator can change it in the Home Assistant
+  UI, and opening `/cronotermostato` by hand as a non-administrator has not been checked yet.
+- The static files of the editor are served without authentication (like all Home Assistant
+  static paths); they contain no personal data.
+
+### Installing and updating
+
+Install through HACS as described above (or copy the folder) and restart Home Assistant: the card
+and the sidebar entry appear, nothing else to configure.
+
+To update, update through HACS and **restart Home Assistant**. The version of `manifest.json` is
+part of the URL of the editor files (`/cronotermostato_static/<version>/...`), so a new version
+means new URLs and the browser does not serve the old code. This is the design; it has not been
+verified on a live system. If you change the files without raising the version (for example while
+developing), the browser or the companion app may keep the old JavaScript: reload the page without
+cache (or clear the app's cache) and raise the version.
 
 ## Concepts
 
@@ -201,7 +271,9 @@ Entities appear and disappear as rooms and programs are created and removed.
 
 ## WebSocket API
 
-For the editor (read-only or pure; open to every authenticated user):
+Used by the editor. The commands below are read-only or pure and open to every authenticated user
+(there are also `subscribe`, which notifies changes, and the write commands `save_program`,
+`delete_program`, `assign`, `unassign`, which follow `admin_only`):
 
 - `cronotermostato/state`: programs (`week`, `holiday`, `week_full`, `holiday_full`),
   rooms (`climate_entity_id`, `name`, `program_id`, `program_name`, `paused`,
@@ -211,7 +283,7 @@ For the editor (read-only or pure; open to every authenticated user):
   returns them with the automatic `off` slots.
 - `cronotermostato/countries`: country code -> list of region codes.
 
-Changes to programs are made only with the services.
+Programs can also be changed with the services.
 
 ## Behaviour
 
@@ -273,6 +345,9 @@ the two will overwrite each other.
   real limits are those of the room's `climate`, checked when the service runs.
 - Program names are at most 100 characters; ids are slugs of at most 50 characters.
 - `cronotermostato/state` is readable by every authenticated user.
+- The `cronotermostato.*` services are open to every authenticated user; `admin_only` does not
+  restrict them (see Permissions).
+- The editor has been tested with automated tests only, not yet on a live Home Assistant.
 - Only one configuration entry; one program per room.
 - No icon/brand image yet (HACS asks for `brand/icon.png`).
 
@@ -281,7 +356,7 @@ the two will overwrite each other.
 ```
 uv venv --python 3.14 .venv
 uv pip install --python .venv/bin/python -r requirements_test.txt
-uv run pytest
+uv run --no-sync pytest -W error -q
 node --test "tests/frontend/*.test.mjs"
 ```
 
@@ -292,7 +367,12 @@ The editor ships Lit as a single file, `frontend/lit.js`: a third-party bundle t
 ourselves from the official npm packages (Lit 3.3.3), not a ready-made file downloaded from
 somewhere; its header lists the exact packages, their integrity hashes, the build command and the
 checksum of the body, which `tests/frontend/lit.test.mjs` verifies. There is no build step in this
-repository.
+repository: the files in `custom_components/cronotermostato/frontend/` are written by hand, not
+generated or minified (CI fails if a `*.min.js` or `*.map` file appears there), and the only
+third-party file is `lit.js` (license in `LICENSE-lit.txt`).
+
+A guided manual check on a real Home Assistant is in `docs/PROVA_EDITOR_SU_HA.md` (Italian; the
+integration alone: `docs/PROVA_SU_HA.md`).
 
 The Lovelace card announces `https://github.com/alexcoscia/cronotermostato#readme` as its
 documentation link in the card picker (`documentationURL`). The GitHub repository does not exist

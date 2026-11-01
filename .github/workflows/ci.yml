@@ -28,7 +28,7 @@ jobs:
       - uses: astral-sh/setup-uv@v5
       - run: uv venv --python 3.14 .venv
       - run: uv pip install --python .venv/bin/python -r requirements_test.txt
-      - run: uv run pytest
+      - run: uv run --no-sync pytest -W error -q
 
   frontend:
     runs-on: ubuntu-latest
@@ -38,3 +38,11 @@ jobs:
         with:
           node-version: 22
       - run: node --test "tests/frontend/*.test.mjs"
+      - name: No generated or minified files of our own in frontend/
+        run: |
+          found=$(find custom_components/cronotermostato/frontend \( -name '*.min.js' -o -name '*.map' \) -print)
+          if [ -n "$found" ]; then
+            echo "Generated or minified files are not allowed in frontend/:"
+            echo "$found"
+            exit 1
+          fi
