@@ -12,3 +12,9 @@ export function deepActiveElement(root = globalThis.document) {
 export function restoreFocus(element) {
   if (element && element.isConnected && typeof element.focus === "function") element.focus();
 }
+
+/** Index reached from `index` moving by `delta` among `length` fields, kept inside the list; -1 when `index` is -1. */
+export function relativeIndex(length, index, delta) {
+  if (index < 0 || length <= 0) return -1;
+  return Math.min(length - 1, Math.max(0, index + delta));
+}

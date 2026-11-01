@@ -103,7 +103,7 @@ export function nextText(t, slot, options = {}) {
 
 // ---- Rows: every climate of HA ------------------------------------------------------------------------
 
-function areaOf(hass, entityId) {
+export function areaOf(hass, entityId) {
   const entry = hass?.entities?.[entityId];
   const areaId = entry?.area_id ?? (entry?.device_id ? hass?.devices?.[entry.device_id]?.area_id : null);
   const name = areaId ? hass?.areas?.[areaId]?.name : null;

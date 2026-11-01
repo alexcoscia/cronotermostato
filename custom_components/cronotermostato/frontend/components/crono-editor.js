@@ -3,13 +3,15 @@
 // Used by the sidebar panel today and by the Lovelace card later: it only needs `hass`.
 
 import { LitElement, html, css, nothing } from "../lit.js";
-import { tokens, base } from "../styles.js";
+import { tokens, base, fields } from "../styles.js";
 import { syncTheme, watchTheme } from "../lib/theme.js";
 import { iconWarn, iconCheck, iconDot } from "../icons.js";
 import { createStore } from "../lib/store.js";
 import { createT, tn, languageOf } from "../lib/i18n.js";
 import { previewDay, saveProgram } from "../lib/api.js";
 import { climateRooms } from "../lib/climate.js";
+import { ALL, resolveReference, referenceRooms, referenceOptions, referenceHintKey, loadReference, storeReference } from "../lib/reference-room.js";
+import { deepActiveElement } from "../lib/focus.js";
 import { deserializeProgram } from "../lib/model.js";
 import { canEdit, errorMessage } from "../lib/program-list.js";
 import { copyTargetIds, quickTargets } from "../lib/holiday.js";
@@ -55,6 +57,7 @@ export class CronoEditor extends LitElement {
     programId: { attribute: false }, // the Lovelace card: open this program (if it exists) instead of the remembered one
     _state: { state: true },
     _selection: { state: true },
+    _referencePicks: { state: true }, // program id -> choice made in this page (not saved in the program)
     _draft: { state: true },
     _previews: { state: true },
     _day: { state: true },
@@ -70,6 +73,7 @@ export class CronoEditor extends LitElement {
   static styles = [
     tokens,
     base,
+    fields,
     css`
       :host {
         display: block;
@@ -148,6 +152,25 @@ export class CronoEditor extends LitElement {
       }
       .state.ok {
         color: var(--crono-ok);
+      }
+      .reference {
+        display: grid;
+        gap: 6px;
+        max-width: 520px;
+      }
+      .reference label {
+        color: var(--crono-text);
+      }
+      .reference .help {
+        font-size: 12.5px;
+        color: var(--crono-muted);
+      }
+      .reference .pick {
+        display: flex;
+        gap: 6px;
+        align-items: flex-start;
+        font-weight: 600;
+        color: var(--crono-text);
       }
       .sep {
         border: 0;
@@ -237,6 +260,7 @@ export class CronoEditor extends LitElement {
     this._store = createStore();
     this._state = this._store.getState();
     this._selection = selectionOf(loadStoredSelection());
+    this._referencePicks = new Map();
     this._status = "none";
     this._deletedId = null; // deleted here, maybe still listed by a state read before the refresh
     this._orderedIds = []; // ids in list order at the last successful reconciliation
@@ -399,9 +423,24 @@ export class CronoEditor extends LitElement {
     const { row, patch } = event.detail;
     let bands = getDay(this._draft, this._day);
     let key = row.key;
-    if (row.auto) ({ bands, key } = adoptAutoBand(bands, row));
+    const adopted = row.auto === true;
+    if (adopted) ({ bands, key } = adoptAutoBand(bands, row));
     this._edit(this._day, patchBand(bands, key, patch));
+    if (adopted && event.detail.focus) this._keepFocus(key, event.detail.focus);
   };
+
+  // The calculated band became the user's: its row is recreated (new key) and the browser drops the focus
+  // to BODY. Once the page has settled, put it where the user was going (the next field, the same one on
+  // Enter or a button), unless it has gone somewhere else meanwhile.
+  _keepFocus(key, { field, delta }) {
+    this.updateComplete.then(() =>
+      setTimeout(() => {
+        const active = deepActiveElement(this.shadowRoot);
+        if (active && active !== globalThis.document?.body && active !== this) return;
+        this.renderRoot.querySelector("crono-day")?.focusField(key, field, delta);
+      }, 0),
+    );
+  }
 
   _onBandRemove = (event) => {
     event.stopPropagation();
@@ -604,7 +643,12 @@ export class CronoEditor extends LitElement {
     const readOnly = !canEdit(this._state, this.hass);
     const { byKey, summary } = programErrors(draft);
     const assigned = new Set(rooms.map((r) => r.climate_entity_id));
-    const climate = climateRooms(this.hass).filter((room) => assigned.has(room.id));
+    const allClimate = climateRooms(this.hass);
+    const climate = allClimate.filter((room) => assigned.has(room.id)); // the assigned rooms: warnings stay on them
+    const elsewhere = new Set(this._state.rooms.filter((room) => room.program_id !== idOf(selected)).map((room) => room.climate_entity_id));
+    const stored = this._referencePicks.has(idOf(selected)) ? this._referencePicks.get(idOf(selected)) : loadReference(idOf(selected));
+    const reference = resolveReference({ stored, climate: allClimate, assignedIds: assigned, elsewhereIds: elsewhere });
+    const referenced = referenceRooms(reference, allClimate, assigned); // the rooms whose presets and step the fields follow
     const days = WEEK.map((i) => {
       const bands = getDay(draft, i);
       return {
@@ -634,7 +678,7 @@ export class CronoEditor extends LitElement {
     const stale = this._conflict;
     const canSave = dirty && !blocked && !this._saving && !readOnly && !stale;
     const full = addBand(getDay(draft, current.id)) === null;
-    const presets = presetOptions(climate);
+    const presets = presetOptions(referenced);
     return html`
       <section class="card section" aria-labelledby="week-title">
         <div class="sec-head">
@@ -642,6 +686,7 @@ export class CronoEditor extends LitElement {
           ${readOnly ? html`<span class="state">${t("editor.read_only")}</span>` : nothing}
         </div>
         <p class="muted">${readOnly ? t("editor.admin_only") : t("editor.week_hint")}</p>
+        ${readOnly ? nothing : this._renderReference(t, { allClimate, assigned, reference })}
         ${stale
           ? html`<div class="msg warn" role="alert">
               ${iconWarn()}
@@ -665,9 +710,10 @@ export class CronoEditor extends LitElement {
           .label=${current.full}
           .rows=${current.rows}
           .errors=${byKey}
-          .step=${temperatureStep(climate)}
+          .step=${temperatureStep(referenced)}
           .presets=${presets}
-          .hasRooms=${climate.length > 0}
+          .hasRooms=${referenced.length > 0}
+          .referenceName=${reference === ALL || referenced.length !== 1 ? "" : referenced[0].name}
           .readOnly=${readOnly}
           .canAdd=${!full}
           @crono-add=${this._onAdd}
@@ -699,6 +745,32 @@ export class CronoEditor extends LitElement {
       </section>
     `;
   }
+
+  // The reference room: a native select with every climate of HA, the ones assigned to this program first.
+  _renderReference(t, { allClimate, assigned, reference }) {
+    const options = referenceOptions({ climate: allClimate, assignedIds: assigned, hass: this.hass });
+    const hintKey = referenceHintKey(reference);
+    const option = (o) => html`<option value=${o.id} .selected=${reference === o.id}>${o.label}</option>`;
+    return html`<div class="reference">
+      <label for="reference-room">${t("reference.label")}</label>
+      <select id="reference-room" aria-describedby=${hintKey ? "reference-help reference-pick" : "reference-help"} @change=${this._onReference}>
+        ${reference === null ? html`<option value="" selected>${t("reference.choose")}</option>` : nothing}
+        ${options.all ? html`<option value=${ALL} .selected=${reference === ALL}>${t("reference.all")}</option>` : nothing}
+        ${options.assigned.length > 0 ? html`<optgroup label=${t("reference.group_assigned")}>${options.assigned.map(option)}</optgroup>` : nothing}
+        ${options.others.length > 0 ? html`<optgroup label=${t("reference.group_others")}>${options.others.map(option)}</optgroup>` : nothing}
+      </select>
+      ${hintKey ? html`<span class="pick" id="reference-pick">${iconWarn()}<span>${t(hintKey)}</span></span>` : nothing}
+      <span class="help" id="reference-help">${t("reference.help")}</span>
+    </div>`;
+  }
+
+  _onReference = (event) => {
+    const id = this._selection.id;
+    const value = event.target.value;
+    const choice = value === "" ? null : value;
+    this._referencePicks = new Map(this._referencePicks).set(id, choice);
+    storeReference(id, choice === ALL ? null : choice); // only the id of the room, only for this session
+  };
 
   _renderErrors(t, draft, summary, language) {
     const lines = summary.map((e) => {

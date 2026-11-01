@@ -9,7 +9,9 @@ import { LitElement, html, css, nothing } from "../lit.js";
 import { base, modeColors, fields } from "../styles.js";
 import { iconTrash, iconWarn, iconPlus, iconMinus, iconAuto, iconMode } from "../icons.js";
 import { createT, formatNumber } from "../lib/i18n.js";
-import { normalizeTime, presetIsKnown, stepTemperature } from "../lib/day-editing.js";
+import { normalizeTime, stepTemperature } from "../lib/day-editing.js";
+import { presetChoices } from "../lib/reference-room.js";
+import { relativeIndex } from "../lib/focus.js";
 
 let uid = 0;
 const MODES = ["heat", "cool", "off"];
@@ -20,8 +22,10 @@ export class CronoBandRow extends LitElement {
     band: { attribute: false }, // a row of mergeDay: {key, start, end, mode, temperature, preset, auto}
     errors: { attribute: false }, // errors of this band
     step: { type: Number },
-    presets: { attribute: false }, // string[]: union of the presets of the assigned rooms
-    hasRooms: { type: Boolean }, // some room is assigned (a free preset can be checked)
+    presets: { attribute: false }, // string[]: presets of the reference room (or the union of the assigned rooms)
+    hasRooms: { type: Boolean }, // there is a reference room (a preset can be checked)
+    referenceName: { type: String }, // name of the single reference room; empty for "all assigned rooms"
+    _otherOpen: { state: true }, // "Other…" chosen: the free text field is shown
     readOnly: { type: Boolean },
     selected: { type: Boolean, reflect: true },
     highlight: { type: Boolean, reflect: true }, // just added: a short highlight and a visible tag
@@ -153,6 +157,10 @@ export class CronoBandRow extends LitElement {
       input.num {
         font-variant-numeric: tabular-nums;
       }
+      label.sub {
+        margin-top: 4px;
+        font-size: 12.5px;
+      }
       .stepper {
         display: grid;
         grid-template-columns: 44px minmax(0, 1fr) 44px;
@@ -259,14 +267,35 @@ export class CronoBandRow extends LitElement {
     this.step = 0.5;
     this.presets = [];
     this.hasRooms = false;
+    this.referenceName = "";
+    this._otherOpen = false;
+    this._nav = null; // how the focus is leaving a field: {delta}
     this.readOnly = false;
     this.selected = false;
     this._id = `r${++uid}`;
   }
 
-  _emit(patch) {
-    this.dispatchEvent(new CustomEvent("crono-band-change", { detail: { row: this.band, patch }, bubbles: true, composed: true }));
+  // `source`: the field that changed. `focus` tells the editor where the focus has to be after the row is
+  // recreated (a calculated band becomes the user's: new key, new row): {field, delta}, delta 0 = same field,
+  // 1/-1 = the next/previous (Tab/Shift+Tab), null = unknown (a click: leave the focus alone).
+  _emit(patch, source) {
+    const prefix = `${this._id}-`;
+    const id = typeof source?.id === "string" && source.id.startsWith(prefix) ? source.id.slice(prefix.length) : null;
+    const delta = this._nav?.delta ?? (source?.tagName === "BUTTON" ? 0 : null);
+    this._nav = null;
+    const focus = id !== null && delta !== null ? { field: id, delta } : null;
+    this.dispatchEvent(new CustomEvent("crono-band-change", { detail: { row: this.band, patch, focus }, bubbles: true, composed: true }));
   }
+
+  _onKeydown = (event) => {
+    if (event.key === "Tab" && !event.altKey && !event.ctrlKey && !event.metaKey) this._nav = { delta: event.shiftKey ? -1 : 1 };
+    else if (event.key === "Enter") this._nav = { delta: 0 };
+    else this._nav = null;
+  };
+
+  _onPointer = () => {
+    this._nav = null;
+  };
 
   _remove() {
     this.dispatchEvent(new CustomEvent("crono-band-remove", { detail: { row: this.band }, bubbles: true, composed: true }));
@@ -276,21 +305,46 @@ export class CronoBandRow extends LitElement {
     return (event) => {
       const value = normalizeTime(event.target.value);
       event.target.value = value;
-      if (value !== this.band[field]) this._emit({ [field]: value });
+      if (value !== this.band[field]) this._emit({ [field]: value }, event.target);
     };
   }
 
-  _onMode = (event) => this._emit({ mode: event.target.value });
+  _onMode = (event) => this._emit({ mode: event.target.value }, event.target);
 
-  _onTemperature = (event) => this._emit({ temperature: event.target.value });
+  _onTemperature = (event) => this._emit({ temperature: event.target.value }, event.target);
 
   _onPreset = (event) => {
     const value = event.target.value;
-    this._emit({ preset: value.trim() === "" ? null : value });
+    this._emit({ preset: value.trim() === "" ? null : value }, event.target);
   };
 
-  _bump(direction) {
-    this._emit({ temperature: stepTemperature(this.band.temperature, this.step, direction) });
+  // The preset select: "" none, "@other" the free text field, "p:<name>" a preset (prefixed, so no
+  // preset can be taken for one of the other two).
+  _onPresetSelect = (event) => {
+    const value = event.target.value;
+    if (value === "@other") {
+      this._otherOpen = true;
+      this.updateComplete.then(() => this.renderRoot.querySelector("input.preset-other")?.focus());
+      return;
+    }
+    this._otherOpen = false;
+    this._emit({ preset: value.startsWith("p:") ? value.slice(2) : null }, event.target);
+  };
+
+  _bump(direction, event) {
+    this._emit({ temperature: stepTemperature(this.band.temperature, this.step, direction) }, event?.currentTarget);
+  }
+
+  /** Focus the field `field` (its id after the row id) moved by `delta` among the fields of the row. */
+  focusField(field, delta = 0) {
+    const root = this.renderRoot;
+    if (!root) return false;
+    const list = [...root.querySelectorAll("input:not([disabled]), select:not([disabled]), button:not([disabled])")].filter((el) => !el.closest(".head"));
+    const at = list.findIndex((el) => el.id === `${this._id}-${field}`);
+    const target = list[relativeIndex(list.length, at, delta)];
+    if (!target) return false;
+    target.focus();
+    return true;
   }
 
   /** Move the focus to the first field (after adding a band). Read only: to the row itself. */
@@ -330,7 +384,16 @@ export class CronoBandRow extends LitElement {
     const off = band.mode === "off";
     const modeClass = MODES.includes(band.mode) ? `b-${band.mode}` : "b-off";
     const locked = this.readOnly;
-    const unknownPreset = this.hasRooms && !off && !presetIsKnown(band.preset, this.presets);
+    const choices = presetChoices({ rooms: this.hasRooms ? [{ presetModes: this.presets }] : [], current: off ? null : band.preset });
+    const unknownPreset = !off && choices.unavailable;
+    const presetNote = off ? null : !this.hasRooms ? "band.preset_need_room" : choices.noPresets ? "band.preset_room_empty" : null;
+    const presetSelected = off ? "" : this._otherOpen ? "@other" : choices.current.trim() === "" ? "" : `p:${choices.current}`;
+    const currentOption = !off && choices.current.trim() !== "" && !choices.presets.includes(choices.current);
+    const unavailableLabel = choices.unavailable
+      ? this.referenceName
+        ? t("band.preset_unavailable_in", { preset: choices.current, room: this.referenceName })
+        : t("band.preset_unavailable_all", { preset: choices.current })
+      : choices.current;
     const rowLabel = t("band.row", { start: String(band.start), end: String(band.end) });
     const tempValue = band.temperature === null || band.temperature === undefined ? "" : String(band.temperature);
     const header = html`
@@ -346,7 +409,7 @@ export class CronoBandRow extends LitElement {
           </div>`;
     if (locked) return this._renderReadOnly(t, { band, off, modeClass, rowLabel, header, tempValue });
     return html`
-      <div class="row ${modeClass} ${band.auto ? "is-auto" : ""} ${errors.length ? "has-err" : ""}" role="group" aria-label=${rowLabel} tabindex="-1">
+      <div class="row ${modeClass} ${band.auto ? "is-auto" : ""} ${errors.length ? "has-err" : ""}" role="group" aria-label=${rowLabel} tabindex="-1" @keydown=${this._onKeydown} @pointerdown=${this._onPointer}>
         <span class="sw" aria-hidden="true"></span>
         <div class="body">
           ${header}
@@ -372,18 +435,27 @@ export class CronoBandRow extends LitElement {
             <div class="cell span2">
               <label for=${`${id}-temp`}>${t("band.temperature")} (°C)</label>
               <div class="stepper">
-                <button type="button" ?disabled=${off} aria-label=${t("band.temp_down")} title=${t("band.temp_down")} @click=${() => this._bump(-1)}>${iconMinus()}</button>
+                <button type="button" id=${`${id}-down`} ?disabled=${off} aria-label=${t("band.temp_down")} title=${t("band.temp_down")} @click=${(e) => this._bump(-1, e)}>${iconMinus()}</button>
                 <input class="num" id=${`${id}-temp`} type="number" inputmode="decimal" step=${this.step} .value=${off ? "" : tempValue} placeholder=${off ? "—" : ""} ?disabled=${off} aria-invalid=${has("temperature") ? "true" : "false"} aria-describedby=${describedby("temperature") ?? nothing} @change=${this._onTemperature} />
-                <button type="button" ?disabled=${off} aria-label=${t("band.temp_up")} title=${t("band.temp_up")} @click=${() => this._bump(1)}>${iconPlus()}</button>
+                <button type="button" id=${`${id}-up`} ?disabled=${off} aria-label=${t("band.temp_up")} title=${t("band.temp_up")} @click=${(e) => this._bump(1, e)}>${iconPlus()}</button>
               </div>
               ${this._errorLines(t, id, "temperature")}
             </div>
             <div class="cell span2">
               <label for=${`${id}-preset`}>${t("band.preset")}</label>
-              <input id=${`${id}-preset`} type="text" autocomplete="off" list=${`${id}-presets`} .value=${off ? "" : (band.preset ?? "")} placeholder=${off ? "—" : ""} ?disabled=${off} aria-invalid=${has("preset") ? "true" : "false"} aria-describedby=${describedby("preset") ?? nothing} @change=${this._onPreset} />
-              <datalist id=${`${id}-presets`}>${this.presets.map((p) => html`<option value=${p}></option>`)}</datalist>
+              <select id=${`${id}-preset`} ?disabled=${off} aria-invalid=${has("preset") ? "true" : "false"} aria-describedby=${describedby("preset", ...(presetNote ? [`${id}-presetnote`] : [])) ?? nothing} @change=${this._onPresetSelect}>
+                <option value="" .selected=${presetSelected === ""}>${t("room.preset_none")}</option>
+                ${choices.presets.map((p) => html`<option value=${`p:${p}`} .selected=${presetSelected === `p:${p}`}>${p}</option>`)}
+                ${currentOption ? html`<option value=${`p:${choices.current}`} .selected=${presetSelected === `p:${choices.current}`}>${unavailableLabel}</option>` : nothing}
+                <option value="@other" .selected=${presetSelected === "@other"}>${t("band.preset_free")}</option>
+              </select>
+              ${this._otherOpen && !off
+                ? html`<label class="sub" for=${`${id}-preset-other`}>${t("band.preset_free_label")}</label>
+                    <input class="preset-other" id=${`${id}-preset-other`} type="text" autocomplete="off" .value=${band.preset ?? ""} aria-invalid=${has("preset") ? "true" : "false"} aria-describedby=${describedby("preset") ?? nothing} @change=${this._onPreset} />`
+                : nothing}
+              ${presetNote ? html`<span class="hint" id=${`${id}-presetnote`}>${t(presetNote)}</span>` : nothing}
               ${this._errorLines(t, id, "preset")}
-              ${unknownPreset ? html`<span class="fw">${iconWarn()}<span>${t("band.preset_unknown", { preset: String(band.preset) })}</span></span>` : nothing}
+              ${unknownPreset ? html`<span class="fw">${iconWarn()}<span>${this.referenceName ? t("band.preset_unknown_room", { preset: String(band.preset), room: this.referenceName }) : t("band.preset_unknown", { preset: String(band.preset) })}</span></span>` : nothing}
             </div>
           </div>
           <div class="notes">

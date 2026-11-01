@@ -27,6 +27,7 @@ export class CronoDay extends LitElement {
     step: { type: Number },
     presets: { attribute: false },
     hasRooms: { type: Boolean },
+    referenceName: { type: String },
     readOnly: { type: Boolean },
     canAdd: { type: Boolean },
     holiday: { type: Boolean }, // the holiday part, not a day of the week
@@ -182,6 +183,7 @@ export class CronoDay extends LitElement {
     this.step = 0.5;
     this.presets = [];
     this.hasRooms = false;
+    this.referenceName = "";
     this.readOnly = false;
     this.canAdd = true;
     this.holiday = false;
@@ -233,6 +235,18 @@ export class CronoDay extends LitElement {
         return;
       }
     }
+  }
+
+  /** Put the focus on a field of the row of `key`, moved by `delta` (0 = that field, 1 = the next...). */
+  async focusField(key, field, delta = 0) {
+    await this.updateComplete;
+    for (const row of this.renderRoot.querySelectorAll("crono-band-row")) {
+      if (row.band?.key === key) {
+        await row.updateComplete;
+        return row.focusField(field, delta);
+      }
+    }
+    return false;
   }
 
   _announceAdded(key) {
@@ -324,6 +338,7 @@ export class CronoDay extends LitElement {
               .step=${this.step}
               .presets=${this.presets}
               .hasRooms=${this.hasRooms}
+              .referenceName=${this.referenceName}
               .readOnly=${this.readOnly}
               ?selected=${this._selected === row.key}
               ?highlight=${this._flash === row.key}

@@ -225,6 +225,13 @@ for (const name of HOSTILE) {
       row.hasRooms = true;
       row.errors = [{ code: "bad_time", field: "start" }, { code: "unsupported_preset", field: "preset" }];
       assertSafe(row.render(), "band row");
+      row.referenceName = name; // a single reference room: its (hostile) name is in the label and in the warning
+      row.presets = ["eco"];
+      assertSafe(row.render(), "band row, preset not available in the reference room");
+      row._otherOpen = true;
+      assertSafe(row.render(), "band row, free preset field");
+      assertSafe(editor._renderReference(t, { allClimate: climate, assigned: new Set(["climate.x"]), reference: "climate.x" }), "reference room select");
+      assertSafe(editor._renderReference(t, { allClimate: climate, assigned: new Set(), reference: null }), "reference room select, nothing chosen");
 
       const holiday = new C.holiday();
       holiday.hass = hass;
