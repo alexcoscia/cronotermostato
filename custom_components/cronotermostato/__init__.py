@@ -8,13 +8,18 @@ import logging
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryError
+from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.typing import ConfigType
 
-from .const import CONF_COUNTRY, CONF_SUBDIV, PLATFORMS
+from .const import CONF_COUNTRY, CONF_SUBDIV, DOMAIN, PLATFORMS
 from .engine.calendar import HolidayCalendar
 from .manager import Manager
+from .services import async_register_services
 from .store import CronoStore
 
 _LOGGER = logging.getLogger(__name__)
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
 @dataclass
@@ -33,6 +38,12 @@ def entry_location(entry: ConfigEntry) -> tuple[str, str | None]:
     """Return (country, subdivision); the options win over the original data."""
     source = entry.options if entry.options.get(CONF_COUNTRY) else entry.data
     return source[CONF_COUNTRY], source.get(CONF_SUBDIV) or None
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Register the services (they exist even without a loaded entry)."""
+    async_register_services(hass)
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: CronoConfigEntry) -> bool:

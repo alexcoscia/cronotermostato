@@ -26,6 +26,7 @@ class Manager:
     ) -> None:
         self._hass = hass
         self._store = store
+        self.store = store
         self._calendar = calendar
         self.controllers: dict[str, RoomController] = {}
         self._lock = asyncio.Lock()

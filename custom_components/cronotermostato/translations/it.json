@@ -54,6 +54,18 @@
     },
     "room_not_ready": {
       "message": "La stanza non è ancora pronta: nessuna fascia corrente."
+    },
+    "not_loaded": {
+      "message": "Cronotermostato non è caricato."
+    },
+    "invalid_program": {
+      "message": "Programma non valido: {error}"
+    },
+    "unknown_climate": {
+      "message": "L'entità climate {entity_id} non esiste."
+    },
+    "room_not_assigned": {
+      "message": "La stanza {entity_id} non è assegnata a un programma."
     }
   },
   "entity": {
@@ -68,6 +80,130 @@
     "switch": {
       "auto": {
         "name": "Automatico"
+      }
+    }
+  },
+  "services": {
+    "create_program": {
+      "name": "Crea programma",
+      "description": "Crea un programma settimanale e restituisce il suo id.",
+      "fields": {
+        "name": {
+          "name": "Nome",
+          "description": "Nome del programma."
+        },
+        "week": {
+          "name": "Settimana",
+          "description": "Sette liste (da lunedì) di fasce {start, end, mode, temperature}, orari HH:MM."
+        },
+        "holiday": {
+          "name": "Festivi",
+          "description": "Lista di fasce usate nei giorni festivi."
+        }
+      }
+    },
+    "update_program": {
+      "name": "Modifica programma",
+      "description": "Cambia nome, settimana o fasce festive; le stanze assegnate applicano la modifica.",
+      "fields": {
+        "program_id": {
+          "name": "Programma",
+          "description": "Id del programma."
+        },
+        "name": {
+          "name": "Nome",
+          "description": "Nuovo nome."
+        },
+        "week": {
+          "name": "Settimana",
+          "description": "Nuova settimana (sette liste di fasce)."
+        },
+        "holiday": {
+          "name": "Festivi",
+          "description": "Nuove fasce festive."
+        }
+      }
+    },
+    "delete_program": {
+      "name": "Elimina programma",
+      "description": "Elimina un programma senza stanze.",
+      "fields": {
+        "program_id": {
+          "name": "Programma",
+          "description": "Id del programma."
+        }
+      }
+    },
+    "assign": {
+      "name": "Assegna programma",
+      "description": "Assegna una stanza a un programma.",
+      "fields": {
+        "program_id": {
+          "name": "Programma",
+          "description": "Id del programma."
+        },
+        "climate_entity_id": {
+          "name": "Termostato",
+          "description": "L'entità climate della stanza."
+        }
+      }
+    },
+    "unassign": {
+      "name": "Disassegna stanza",
+      "description": "Toglie il programma a una stanza e smette di comandarla.",
+      "fields": {
+        "climate_entity_id": {
+          "name": "Termostato",
+          "description": "L'entità climate della stanza."
+        }
+      }
+    },
+    "pause": {
+      "name": "Metti in pausa",
+      "description": "Smette di comandare una stanza mantenendo l'assegnazione.",
+      "fields": {
+        "climate_entity_id": {
+          "name": "Termostato",
+          "description": "L'entità climate della stanza."
+        }
+      }
+    },
+    "resume": {
+      "name": "Riprendi stanza",
+      "description": "Riprende una stanza in pausa.",
+      "fields": {
+        "climate_entity_id": {
+          "name": "Termostato",
+          "description": "L'entità climate della stanza."
+        }
+      }
+    },
+    "set_manual": {
+      "name": "Forza manualmente",
+      "description": "Forza modo e temperatura fino alla fine della fascia corrente. La temperatura è obbligatoria per heat e cool e ignorata per off.",
+      "fields": {
+        "climate_entity_id": {
+          "name": "Termostato",
+          "description": "L'entità climate della stanza."
+        },
+        "mode": {
+          "name": "Modo",
+          "description": "heat, cool oppure off."
+        },
+        "temperature": {
+          "name": "Temperatura",
+          "description": "Temperatura desiderata."
+        }
+      }
+    },
+    "resume_auto": {
+      "name": "Torna in automatico",
+      "description": "Annulla la forzatura e applica la fascia corrente.",
+      "fields": {
+        "climate_entity_id": {
+          "name": "Termostato",
+          "description": "L'entità climate della stanza."
+        }
       }
     }
   }

@@ -54,6 +54,18 @@
     },
     "room_not_ready": {
       "message": "The room is not ready yet: there is no current slot."
+    },
+    "not_loaded": {
+      "message": "Cronotermostato is not loaded."
+    },
+    "invalid_program": {
+      "message": "Invalid program: {error}"
+    },
+    "unknown_climate": {
+      "message": "The climate entity {entity_id} does not exist."
+    },
+    "room_not_assigned": {
+      "message": "The room {entity_id} is not assigned to a program."
     }
   },
   "entity": {
@@ -68,6 +80,130 @@
     "switch": {
       "auto": {
         "name": "Automatic"
+      }
+    }
+  },
+  "services": {
+    "create_program": {
+      "name": "Create program",
+      "description": "Create a weekly program and return its id.",
+      "fields": {
+        "name": {
+          "name": "Name",
+          "description": "Program name."
+        },
+        "week": {
+          "name": "Week",
+          "description": "Seven lists (Monday first) of bands {start, end, mode, temperature}, times as HH:MM."
+        },
+        "holiday": {
+          "name": "Holiday",
+          "description": "List of bands used on public holidays."
+        }
+      }
+    },
+    "update_program": {
+      "name": "Update program",
+      "description": "Change name, week or holiday bands of a program; assigned rooms apply the change.",
+      "fields": {
+        "program_id": {
+          "name": "Program",
+          "description": "Program id."
+        },
+        "name": {
+          "name": "Name",
+          "description": "New name."
+        },
+        "week": {
+          "name": "Week",
+          "description": "New week (seven lists of bands)."
+        },
+        "holiday": {
+          "name": "Holiday",
+          "description": "New holiday bands."
+        }
+      }
+    },
+    "delete_program": {
+      "name": "Delete program",
+      "description": "Delete a program that has no rooms.",
+      "fields": {
+        "program_id": {
+          "name": "Program",
+          "description": "Program id."
+        }
+      }
+    },
+    "assign": {
+      "name": "Assign program",
+      "description": "Assign a room to a program.",
+      "fields": {
+        "program_id": {
+          "name": "Program",
+          "description": "Program id."
+        },
+        "climate_entity_id": {
+          "name": "Thermostat",
+          "description": "The climate entity of the room."
+        }
+      }
+    },
+    "unassign": {
+      "name": "Unassign room",
+      "description": "Remove the program from a room and stop controlling it.",
+      "fields": {
+        "climate_entity_id": {
+          "name": "Thermostat",
+          "description": "The climate entity of the room."
+        }
+      }
+    },
+    "pause": {
+      "name": "Pause room",
+      "description": "Stop sending commands to a room, keeping its assignment.",
+      "fields": {
+        "climate_entity_id": {
+          "name": "Thermostat",
+          "description": "The climate entity of the room."
+        }
+      }
+    },
+    "resume": {
+      "name": "Resume room",
+      "description": "Resume a paused room.",
+      "fields": {
+        "climate_entity_id": {
+          "name": "Thermostat",
+          "description": "The climate entity of the room."
+        }
+      }
+    },
+    "set_manual": {
+      "name": "Set manually",
+      "description": "Force a mode and temperature until the end of the current slot. The temperature is required for heat and cool and ignored for off.",
+      "fields": {
+        "climate_entity_id": {
+          "name": "Thermostat",
+          "description": "The climate entity of the room."
+        },
+        "mode": {
+          "name": "Mode",
+          "description": "heat, cool or off."
+        },
+        "temperature": {
+          "name": "Temperature",
+          "description": "Target temperature."
+        }
+      }
+    },
+    "resume_auto": {
+      "name": "Resume automatic",
+      "description": "Drop the manual override and apply the current slot.",
+      "fields": {
+        "climate_entity_id": {
+          "name": "Thermostat",
+          "description": "The climate entity of the room."
+        }
       }
     }
   }
