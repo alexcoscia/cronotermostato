@@ -59,13 +59,19 @@ a list of exactly 7 lists (Monday to Sunday).
 Creates a program and returns its id (the slug of the name; a numeric suffix is added
 if it already exists). Fields: `name` (1-100 characters), `week`, `holiday` (all required).
 
+Each band has `start`, `end`, `mode` (`heat`, `cool`, `off`) and two optional fields,
+`temperature` and `preset` (a string: one of the `preset_modes` of the thermostat, for
+example `home`, `eco`, `sleep`, or `none` if the thermostat lists it). For `heat` and
+`cool` at least one of the two is required (both are allowed); `off` takes neither.
+
 ```yaml
 action: cronotermostato.create_program
 data:
   name: Casa
   week:
     - [{start: "06:30", end: "08:00", mode: heat, temperature: 20.5},
-       {start: "17:00", end: "22:30", mode: heat, temperature: 21}]
+       {start: "17:00", end: "22:30", mode: heat, temperature: 21},
+       {start: "22:30", end: "24:00", mode: heat, preset: sleep}]
     - []
     - []
     - []
@@ -138,9 +144,9 @@ data:
 
 ### `cronotermostato.set_manual`
 
-Forces a mode and temperature **until the end of the current slot**. Fields:
-`climate_entity_id`, `mode` (`heat`, `cool`, `off`), `temperature` (required for
-`heat`/`cool`, ignored for `off`).
+Forces a setting **until the end of the current slot**. Fields:
+`climate_entity_id`, `mode` (`heat`, `cool`, `off`), `temperature` and `preset` (both
+optional, but `heat`/`cool` need at least one; both are ignored for `off`).
 
 ```yaml
 action: cronotermostato.set_manual
@@ -148,6 +154,14 @@ data:
   climate_entity_id: climate.soggiorno
   mode: heat
   temperature: 22
+```
+
+```yaml
+action: cronotermostato.set_manual
+data:
+  climate_entity_id: climate.soggiorno
+  mode: heat
+  preset: eco      # preset only: no set_temperature is sent
 ```
 
 ### `cronotermostato.resume_auto`
@@ -169,9 +183,9 @@ temperature outside the limits of the thermostat fails with `temperature_out_of_
 For each assigned room (one device per room; entity ids use the room name, in Italian):
 
 - `sensor.<room>_programma`: state is the name of the program. Attributes: `slot` and
-  `next_slot` (`start`, `end`, `mode`, `temperature`, `auto`), `slot_end`, `manual`,
+  `next_slot` (`start`, `end`, `mode`, `temperature`, `preset`, `auto`), `slot_end`, `manual`,
   `override_until`, `auto_slot`, `holiday` (today is a holiday), `status`.
-  `status` is one of `ok`, `paused`, `unavailable`, `unsupported_mode`, `out_of_range`,
+  `status` is one of `ok`, `paused`, `unavailable`, `unsupported_mode`, `unsupported_preset`, `out_of_range`,
   `missing`, `error`.
 - `switch.<room>_automatico`: on while the room follows its program. Turning it off
   forces the current slot's setting until the slot ends; turning it on goes back to
@@ -201,7 +215,7 @@ Changes to programs are made only with the services.
 
 ## Behaviour
 
-- Commands are sent (first the mode, then the temperature) at a slot change if the
+- Commands are sent (in this order: the mode, the preset if the slot has one, the temperature if it has one) at a slot change if the
   setting differs from the last one applied, at Home Assistant start, on assignment,
   on resume, after a program edit, when the thermostat comes back from
   `unavailable`, and when an override starts or ends. **No periodic commands.**
@@ -214,10 +228,16 @@ Changes to programs are made only with the services.
 - If the thermostat is `unavailable`, nothing is sent; when it comes back the
   current slot is applied. If it does not support the slot's mode, nothing is sent
   and the status is `unsupported_mode`.
+- Presets are checked like modes, against the `preset_modes` attribute of the `climate`
+  entity (`none` is valid if the thermostat lists it). A slot or override with a preset
+  the thermostat does not list sends nothing at all (not even the mode): status
+  `unsupported_preset` and one warning in the log per change. The temperature limits are
+  checked only when the slot has a temperature. Slots that differ only by preset are
+  different slots (never merged), and a command is sent at their boundary.
 - Temperature limits come from the `climate` entity (`min_temp`, `max_temp` attributes);
   if they are missing or invalid (not numbers, or min >= max) 5.0 and 35.0 °C are used.
   A `heat`/`cool` slot (or override) outside the limits is not sent at all (neither mode
-  nor temperature, so the room is not left half set): status `out_of_range` and one
+  nor preset nor temperature, so the room is not left half set): status `out_of_range` and one
   warning in the log. The next slot change, or an explicit action, tries again. `off`
   has no temperature and is never out of range.
 - Holidays come from the `holidays` library for the chosen country and region.
@@ -243,6 +263,12 @@ the two will overwrite each other.
   comes back, or until an explicit action (assign, resume, resume_auto, program edit).
 - An override whose command never went out (Home Assistant stopped right after saving
   it) is not re-sent after the restart.
+- Some thermostats change the preset by themselves when they receive a manual
+  temperature (observed on the test thermostat). For a slot with **both** a preset and a
+  temperature the temperature is sent last, so it may make the thermostat switch its
+  preset. For this kind of thermostat use a preset alone or a temperature alone in a slot.
+- The thermostat is not asked whether a preset really took effect; a rejected command
+  gives status `error`.
 - The temperature selector of `set_manual` in `services.yaml` shows 5-35 as a hint; the
   real limits are those of the room's `climate`, checked when the service runs.
 - Program names are at most 100 characters; ids are slugs of at most 50 characters.

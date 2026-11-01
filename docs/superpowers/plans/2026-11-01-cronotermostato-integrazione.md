@@ -13,15 +13,15 @@
 ## Global Constraints
 
 - Dominio `cronotermostato`; repository HACS `cronotermostato` (la cartella di lavoro è `~/cronotermostato`).
-- Modi di una fascia: solo `heat`, `cool`, `off`. `off` non ha temperatura. Niente preset, niente `heat_cool`.
+- Modi di una fascia: solo `heat`, `cool`, `off`. `off` non ha temperatura né preset. Niente `heat_cool`. Preset (aggiunti dopo la prima prova su HA, deciso da Alex): campo facoltativo `preset` della fascia; per `heat`/`cool` serve almeno uno fra preset e temperatura.
 - Orari come minuti dalla mezzanotte (0..1440); testo `"HH:MM"`, con `"24:00"` ammesso solo come fine.
 - Fasce senza sovrapposizioni, estremi senza minuti di scarto (8:00-12:00 poi 12:00-...). Si salvano solo le fasce dell'utente; le fasce automatiche (`auto=True`, `off`) si calcolano.
 - Una stanza ha un solo programma; un programma molte stanze; un'assegnazione si può mettere in pausa.
 - Un giorno festivo (nazione e suddivisione scelte) usa sempre la parte festiva, anche di domenica.
-- Una fascia continua oltre la mezzanotte: fasce adiacenti identiche (modo, temperatura, `auto`) a cavallo di due giorni formano un solo slot, e non c'è comando a mezzanotte.
+- Una fascia continua oltre la mezzanotte: fasce adiacenti identiche (modo, temperatura, preset, `auto`) a cavallo di due giorni formano un solo slot, e non c'è comando a mezzanotte.
 - Forzatura: finisce alla fine dello slot in cui nasce, o con `resume_auto`; sopravvive al riavvio.
-- Ordine dei comandi: prima `climate.set_hvac_mode`, poi `climate.set_temperature`. Nessuna stanza non assegnata viene mai comandata. Nessun comando periodico.
-- Modo non supportato dal termostato: non si comanda, stato `unsupported_mode`.
+- Ordine dei comandi: prima `climate.set_hvac_mode`, poi `climate.set_preset_mode` (se la fascia ha un preset), poi `climate.set_temperature` (se ha una temperatura). Nessuna stanza non assegnata viene mai comandata. Nessun comando periodico.
+- Modo non supportato dal termostato: non si comanda, stato `unsupported_mode`. Preset non elencato nei `preset_modes` del climate: non si comanda nulla (nemmeno il modo), stato `unsupported_preset`.
 - Interfaccia in italiano e inglese (`strings.json`, `translations/it.json`, `en.json`); codice e README in inglese.
 - Un'unica istanza (`single_config_entry`). Attributi grandi esclusi dal recorder (`_unrecorded_attributes`).
 
@@ -235,3 +235,26 @@
 - [ ] **Step 3:** **Chiedere ad Alex** prima di qualsiasi comando ai termostati reali: la prova su HA assegna un programma a una stanza che lui indica. Poi copiare `custom_components/cronotermostato` in `/config/custom_components/` (Samba o File editor), riavviare HA e seguire `docs/PROVA_SU_HA.md`.
 - [ ] **Step 4:** **Chiedere ad Alex** prima di creare il repository su GitHub, di fare il push e di pubblicare la release `v0.1.0` (la release è ciò che HACS legge).
 - [ ] **Step 5:** Commit `"Documentazione e prova su Home Assistant"`.
+
+---
+
+## Aggiunta dopo la prima prova su HA: preset
+
+Decisione di Alex dopo la prova su `climate.termostato_casa` (preset `none`, `away`, `comfort`, `eco`, `home`, `sleep`, `activity`): i preset dei termostati sono supportati. Regole:
+
+- Una fascia ha un campo facoltativo `preset`. `heat`/`cool`: serve almeno uno fra preset e temperatura (anche entrambi); `off`: né temperatura né preset. Le fasce automatiche restano `off` senza preset.
+- Ordine dei comandi: `set_hvac_mode`, `set_preset_mode` (se c'è il preset), `set_temperature` (se c'è la temperatura); tutti bloccanti, un fallimento ferma i successivi.
+- Preset non elencato nei `preset_modes` del climate: nessun comando (nemmeno il modo), stato `unsupported_preset`, un avviso per cambio. `none` vale se il climate lo elenca. Il controllo dei limiti di temperatura vale solo se la fascia ha una temperatura.
+- Chiave "stesso comando" = (modo, preset, temperatura); la fusione degli slot nella Timeline include il preset.
+- La forzatura (`Override`, `set_manual`) accetta il preset; lo switch automatico, spegnendolo, usa modo, preset e temperatura della fascia corrente. Con `off` temperatura e preset della forzatura sono ignorati.
+- Dati salvati prima dei preset (senza la chiave) si caricano con preset `None`, senza migrazione.
+
+File toccati (in `custom_components/cronotermostato/`):
+
+- `engine/models.py` (campo `Band.preset`, `validate_setting`, serializzazione), `engine/timeline.py` (fusione), `engine/day.py` (invariato nel codice: le fasce auto restano senza preset, `program_views` emette `preset` tramite `program_to_dict`).
+- `store.py` (`Override.preset`, lettura/scrittura, dati vecchi).
+- `controller.py` (ordine dei comandi, `unsupported_preset`, chiave del comando, `async_set_manual(mode, temperature, preset)`).
+- `services.py`, `services.yaml`, `strings.json`, `translations/it.json`, `translations/en.json` (campo `preset` in fasce e `set_manual`).
+- `switch.py` (forzatura con il preset della fascia), `entity.py` (`slot_dict` con `preset`), `sensor.py` e `websocket_api.py` (nessuna modifica al codice: attributi, `state` e `preview_day` portano `preset` tramite `slot_dict` e `program_views`).
+- Test: `tests/engine/test_models.py`, `test_day.py`, `test_timeline.py`, `tests/test_store.py`, `test_controller.py`, `test_services.py`, `test_entities.py`, `test_websocket.py`.
+- Documentazione: `README.md` (servizi, stati, limite sul cambio preset da temperatura), `docs/PROVA_SU_HA.md` (verifiche con preset).

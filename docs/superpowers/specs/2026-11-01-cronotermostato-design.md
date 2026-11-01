@@ -23,6 +23,14 @@ Obiettivi (deciso):
 - Fasce con ora di inizio e di fine, modo e temperatura. Il programma calcola da solo le fasce rimaste vuote e le mostra
   come **fasce automatiche, spente di default**; l'utente può modificarle e allora diventano sue.
 - Modi di una fascia: riscaldamento, raffrescamento, spento (anche per i condizionatori).
+- Preset dei termostati (`home`, `away`, `eco`…) come azione di una fascia (deciso da Alex, dopo la prima prova su
+  `climate.termostato_casa`, che ha i preset `none`, `away`, `comfort`, `eco`, `home`, `sleep`, `activity`). Una fascia ha un
+  campo **facoltativo** `preset`. Per `heat` e `cool` serve almeno uno fra preset e temperatura (possono esserci entrambi);
+  `off` non ha né temperatura né preset. Ordine dei comandi: `set_hvac_mode`, poi `set_preset_mode` (se c'è un preset),
+  poi `set_temperature` (se c'è una temperatura). Il preset si controlla contro i `preset_modes` del `climate`: se non è
+  supportato non si comanda nulla (nemmeno il modo) e lo stato è `unsupported_preset` (`none` vale se il climate lo
+  elenca). I limiti di temperatura si controllano solo se la fascia ha una temperatura. Due fasce adiacenti con preset
+  diverso non si fondono, e la chiave "stesso comando" è (modo, preset, temperatura). Anche la forzatura può avere un preset.
 - Le festività dipendono dalla **nazione scelta** (non fissa sull'Italia).
 - Forzatura manuale per stanza: dura fino al prossimo cambio di fascia, oppure finché l'utente non rimette in automatico.
 - Funziona senza il pannello: a comandare i termostati è l'integrazione di HA.
@@ -31,7 +39,6 @@ Obiettivi (deciso):
 
 Non obiettivi (mia scelta, per la prima versione):
 - Giorni di festa personalizzati (patrono, ferie): solo quelli della nazione scelta.
-- Preset dei termostati (`home`, `away`, `eco`…) come azione di una fascia: una fascia dà modo e temperatura.
 - Modi diversi da riscaldamento, raffrescamento e spento (niente `heat_cool`, `auto`, `fan_only`).
 - Rilevare modifiche fatte altrove (manopola fisica del termostato, app del costruttore) e trattarle come forzature.
 - Sostituire o migrare in automatico gli schedule dello Scheduler.
@@ -56,7 +63,7 @@ parte (da decidere con Alex).
 
 ## 4. Modello dei dati
 
-**Fascia**: `inizio`, `fine`, `modo` (`heat`, `cool`, `off`), `temperatura` (assente se `off`), `automatica` (vero se
+**Fascia**: `inizio`, `fine`, `modo` (`heat`, `cool`, `off`), `temperatura` (assente se `off`), `preset` (facoltativo, assente se `off`), `automatica` (vero se
 calcolata dal programma).
 
 **Giorno**: una sequenza di fasce che copre le 24 ore senza buchi né sovrapposizioni. L'utente inserisce le fasce che
@@ -84,10 +91,11 @@ stanza, oppure con "rimetti in automatico". Una forzatura sopravvive al riavvio 
   programma o di assegnazione, a ogni riavvio. Orari secondo il fuso orario di HA; il cambio dell'ora legale non crea buchi.
 - **Quando comanda**: al cambio di fascia, all'avvio di HA (applica la fascia corrente, a meno di una forzatura attiva),
   quando una stanza viene assegnata o ripresa dalla pausa, e quando una forzatura finisce. Ordine dei comandi: prima il
-  modo, poi la temperatura.
+  modo, poi il preset (se c'è), poi la temperatura (se c'è).
 - **Termostato non disponibile** al momento del cambio: riprova quando torna disponibile e applica la fascia di quel momento.
 - **Modo non supportato** (es. `cool` su un termostato che ha solo `heat` e `off`): non comanda quella fascia, lo segnala
-  nel log e in un'entità di stato della stanza. Non cambia modo da solo.
+  nel log e in un'entità di stato della stanza. Non cambia modo da solo. Lo stesso vale per un **preset non supportato**
+  (stato `unsupported_preset`).
 - **Festività**: dalla libreria Python `holidays` (la stessa dell'integrazione Festività di HA), con nazione e suddivisione
   scelte dall'utente (mia scelta sulla libreria; da verificare i requisiti di HACS).
 - **Modifiche fatte altrove** (manopola, app): non sono viste come forzature. Valgono finché non cambia la fascia.
@@ -104,7 +112,7 @@ Per ogni stanza assegnata:
 Per ogni programma: `sensor.programma_<nome>` con la definizione completa negli attributi e l'elenco delle stanze.
 
 Servizi: `create_program`, `update_program`, `delete_program`, `assign`, `unassign`, `pause`, `resume`, `set_manual`
-(stanza, modo, temperatura), `resume_auto` (stanza). In più un'API WebSocket per l'editor.
+(stanza, modo, preset e/o temperatura), `resume_auto` (stanza). In più un'API WebSocket per l'editor.
 
 ## 7. Schermate
 

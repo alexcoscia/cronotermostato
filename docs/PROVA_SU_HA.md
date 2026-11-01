@@ -76,6 +76,17 @@ Stanza di prova: `climate.termostato_casa`   Data: ______
 - [ ] `set_manual` a 30 gradi (e a 14): errore "fuori dai limiti" (`temperature_out_of_range`), nessuna forzatura
       salvata, nessun comando. `set_manual` a 25: riesce. Lo switch automatico spento su una fascia fuori limiti
       d'errore allo stesso modo.
+- [ ] Preset (`climate.termostato_casa`: `none`, `away`, `comfort`, `eco`, `home`, `sleep`, `activity`). Fascia `heat`
+      con **solo** preset `home`: il log/la cronologia mostra `set_hvac_mode` poi `set_preset_mode` e **nessun**
+      `set_temperature`; `status: ok`, il termostato mostra il preset `home`; `slot.preset` negli attributi del sensore.
+- [ ] Fascia con preset **non supportato** (per esempio `boost`): `status: unsupported_preset`, nessun comando (ne' modo
+      ne' preset ne' temperatura), un solo avviso nel log; al cambio fascia successivo (fascia valida) torna `ok`.
+- [ ] Fascia con preset **e** temperatura (per esempio `eco` + 20): l'ordine e' modo, preset, temperatura. Osservare se
+      il termostato cambia da solo il preset dopo la temperatura (limite noto): in quel caso usare preset o temperatura
+      da soli.
+- [ ] `set_manual` con solo `preset: eco`: forza il preset fino a fine fascia; `set_manual` senza ne' preset ne'
+      temperatura per `heat`: errore `invalid_program`. Lo switch automatico spento su una fascia con preset forza
+      modo, preset e temperatura di quella fascia.
 - [ ] Un valore entro i limiti ma rifiutato dal termostato: `status: error` e nessun nuovo tentativo fino al
       prossimo cambio fascia / ritorno disponibile / azione esplicita (limite noto).
 
