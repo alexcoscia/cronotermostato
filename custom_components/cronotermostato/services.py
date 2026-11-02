@@ -230,6 +230,7 @@ async def async_set_day(
     except ServiceValidationError as err:
         if err.translation_key != "room_not_assigned":
             manager.last_errors[climate_id] = str(err.translation_key)
+            manager.error_seq[climate_id] = manager.error_seq.get(climate_id, 0) + 1
             async_dispatcher_send(hass, SIGNAL_ROOM_UPDATED.format(climate_id))
         raise
     if manager.last_errors.pop(climate_id, None) is not None:

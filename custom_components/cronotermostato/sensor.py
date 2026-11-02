@@ -71,7 +71,8 @@ TILE_ATTRIBUTES = frozenset(
 EDIT_ATTRIBUTES = frozenset(
     {
         "program_name", "program_rooms", "today_kind", "last_error",
-        "today_preset", "today_locked", "edit_info",
+        "today_preset", "today_locked", "edit_info", "edit_seq", "edit_n",
+        "today_flags",
     }
 )
 """Flat attributes for editing today's bands from a display: the shared
@@ -80,7 +81,22 @@ program, how many rooms use it, which day is edited (``mon`` .. ``sun`` or
 ``edit_info`` packs the same facts plus the revision of the program into one
 text for displays that read few attributes:
 ``<today_kind>;<program_rooms>;<program_revision>;<last_error>`` (an empty
-field when missing; the revision is 12 hex characters, never a ``;``)."""
+field when missing; the revision is 12 hex characters, never a ``;``; the
+error is a short code, see ``EDIT_ERROR_CODES``). ``edit_seq`` counts the
+refused ``set_day`` attempts of the room (so a repeated refusal changes the
+state), ``edit_n`` is the length of the ``today_*`` lists and ``today_flags``
+packs ``today_auto`` (bit 1) and ``today_locked`` (bit 2)."""
+
+
+EDIT_ERROR_CODES = {"temperature_out_of_range": "temp_range"}
+"""Short codes used inside ``edit_info`` (the Tessera core cuts texts at 48
+characters); ``last_error`` keeps the long code."""
+
+
+def edit_info(kind: str, rooms: int, revision: str, error: str | None) -> str:
+    """``<today_kind>;<program_rooms>;<program_revision>;<error>`` (max 40 chars)."""
+    code = EDIT_ERROR_CODES.get(error or "", error or "")
+    return f"{kind};{rooms};{revision};{code}"
 
 
 def _iso(moment: datetime | None) -> str | None:
@@ -132,6 +148,7 @@ class RoomProgramSensor(RoomEntity, SensorEntity):
         bands = (
             controller.day_bands(dt_util.now().date()) if controller else ()
         )
+        locked = [int(not b.auto and band_problem(b) is not None) for b in bands]
         return {
             "today_start": [b.start for b in bands],
             "today_end": [b.end for b in bands],
@@ -142,9 +159,11 @@ class RoomProgramSensor(RoomEntity, SensorEntity):
             ],
             "today_auto": [int(b.auto) for b in bands],
             "today_preset": [b.preset or "" for b in bands],
-            "today_locked": [
-                int(not b.auto and band_problem(b) is not None) for b in bands
+            "today_locked": locked,
+            "today_flags": [
+                int(b.auto) | (flag << 1) for b, flag in zip(bands, locked)
             ],
+            "edit_n": len(bands),
         }
 
     @property
@@ -173,7 +192,8 @@ class RoomProgramSensor(RoomEntity, SensorEntity):
             "program_rooms": rooms,
             "today_kind": kind,
             "last_error": error,
-            "edit_info": f"{kind};{rooms};{revision};{error or ''}",
+            "edit_info": edit_info(kind, rooms, revision, error),
+            "edit_seq": self._data.manager.error_seq.get(self._climate_id, 0),
         }
 
     @property

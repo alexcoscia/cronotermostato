@@ -533,16 +533,73 @@ async def test_tile_dst_days_keep_wall_clock_minutes(env):
         assert attrs["today_start"][1:] == attrs["today_end"][:-1]
 
 
-async def test_tile_dst_gap_band_is_dropped(env):
-    # 02:15-02:45 does not exist on 29 March: no length, no band.
+async def test_tile_dst_gap_band_is_kept(env):
+    # 02:15-02:45 does not exist on 29 March, but it is a band of the program:
+    # the display edits the program (wall-clock minutes), so it must see it,
+    # else saving would erase the band from every Sunday. (Before 0.3.2 the
+    # lists were built from the real pieces of the clock and the band was
+    # dropped here.) The slots stay real.
     day = (Band(135, 165, "heat", 21.0), Band(180, 300, "heat", 19.0))
     prog = await env.store.async_create_program("Gap", (day,) * 7, ())
     env.freezer.move_to(datetime(2026, 3, 29, 12, tzinfo=TZ))
     await env.store.async_assign(ROOM, prog.id)
     await env.hass.async_block_till_done()
     attrs = env.hass.states.get(SENSOR).attributes
-    assert 135 not in attrs["today_start"]
-    assert attrs["today_start"][0] == 0
+    assert attrs["today_start"] == [0, 135, 165, 180, 300]
+    assert attrs["today_end"] == [135, 165, 180, 300, 1440]
+    assert attrs["today_flags"] == [1, 0, 1, 0, 1]
+    assert attrs["edit_n"] == 5
+
+
+@pytest.mark.parametrize(
+    "when",
+    [
+        datetime(2027, 3, 28, 12, tzinfo=TZ),  # Easter Sunday: holiday, spring gap
+        datetime(2027, 3, 21, 12, tzinfo=TZ),  # ordinary Sunday
+        datetime(2027, 10, 31, 12, tzinfo=TZ),  # 25-hour day
+        datetime(2026, 10, 25, 12, tzinfo=TZ),  # 25-hour day
+        datetime(2027, 3, 29, 12, tzinfo=TZ),  # Monday after the change
+    ],
+)
+async def test_tile_lists_ignore_dst_in_every_case(env, when):
+    # A band 02:00-03:00 (the hour that disappears on 28 March 2027).
+    day = (Band(120, 180, "heat", 21.0, preset="eco"),)
+    prog = await env.store.async_create_program("Notte", (day,) * 7, day)
+    env.freezer.move_to(when)
+    await env.store.async_assign(ROOM, prog.id)
+    await env.hass.async_block_till_done()
+    attrs = env.hass.states.get(SENSOR).attributes
+    assert attrs["today_start"] == [0, 120, 180]
+    assert attrs["today_end"] == [120, 180, 1440]
+    assert attrs["today_mode"] == [0, 1, 0]
+    assert attrs["today_temp"] == [NO_TEMP, 21.0, NO_TEMP]
+    assert attrs["today_preset"] == ["", "eco", ""]
+    assert attrs["today_auto"] == [1, 0, 1]
+    assert attrs["today_locked"] == [0, 0, 0]
+    assert attrs["today_flags"] == [1, 0, 1]
+    assert attrs["edit_n"] == 3
+
+
+async def test_tile_flags_combine_auto_and_locked(env):
+    day = (Band(480, 720, "heat", 21.0, preset="Fuori casa"), Band(780, 900, "heat", 20.0))
+    prog = await env.store.async_create_program("Flags", (day,) * 7, ())
+    await env.store.async_assign(ROOM, prog.id)
+    await env.hass.async_block_till_done()
+    attrs = env.hass.states.get(SENSOR).attributes
+    assert attrs["today_auto"] == [1, 0, 1, 0, 1]
+    assert attrs["today_locked"] == [0, 1, 0, 0, 0]
+    assert attrs["today_flags"] == [1, 2, 1, 0, 1]
+    assert attrs["edit_n"] == len(attrs["today_flags"]) == 5
+    assert all(type(v) is int for v in attrs["today_flags"])
+    assert type(attrs["edit_n"]) is int
+
+
+async def test_tile_paused_room_has_empty_flags(env):
+    await env.store.async_assign(ROOM, env.program.id)
+    await env.store.async_set_paused(ROOM, True)
+    await env.hass.async_block_till_done()
+    attrs = env.hass.states.get(SENSOR).attributes
+    assert attrs["today_flags"] == [] and attrs["edit_n"] == 0
 
 
 async def test_tile_preset_only_band_has_sentinel_temperature(env):

@@ -148,13 +148,19 @@ class Timeline:
                 return preceding[-1]
 
     def day_bands(self, day: date) -> tuple[Band, ...]:
-        """Normalized bands of a local day (automatic "off" bands included).
+        """Normalized bands of the program for a local day (automatic "off"
+        bands included), in wall-clock minutes from midnight (0..1440).
 
-        Times are wall-clock minutes from midnight, as in the program, also on
-        a day of 23 or 25 hours; a band lying entirely inside the spring gap
-        has no length and is left out, as in the slots.
+        These are the bands of the program, not the pieces of the real clock:
+        on a day of 23 or 25 hours the times stay as saved, and a band lying
+        inside the spring gap is still there (the slots, instead, leave it out
+        because it has no length). A display that edits the day must see it,
+        or saving would erase it from every such day.
         """
-        return tuple(piece.band for piece in self._pieces(day))
+        holiday = bool(self._is_holiday(day))
+        return normalize_day(
+            self._program.holiday if holiday else self._program.week[day.weekday()]
+        )
 
     # --------------------------------------------------------------- slots
 

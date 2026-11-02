@@ -13,6 +13,9 @@ from pytest_homeassistant_custom_component.common import (
 
 from custom_components.cronotermostato.const import CONF_COUNTRY, CONF_SUBDIV, DOMAIN
 from custom_components.cronotermostato.engine.models import Band, program_revision
+from homeassistant.helpers.dispatcher import async_dispatcher_send
+
+from custom_components.cronotermostato.const import SIGNAL_ROOM_UPDATED
 from custom_components.cronotermostato.sensor import RoomProgramSensor
 
 TZ = ZoneInfo("Europe/Rome")
@@ -338,10 +341,11 @@ async def test_no_state_write_when_nothing_changes(env):
     assert events == []
     with pytest.raises(ServiceValidationError):
         await env.set_day("tue", "")
-    assert len(events) == 1  # only last_error changed
+    assert len(events) == 1  # last_error and edit_seq changed
     with pytest.raises(ServiceValidationError):
         await env.set_day("tue", "")
-    assert len(events) == 1  # same error again: no new write
+    # same error again: since 0.3.2 edit_seq changes, so the display sees it
+    assert len(events) == 2
 
 
 # -- review fixes ------------------------------------------------------
@@ -528,17 +532,47 @@ async def test_edit_info_holiday_and_last_error(env):
     assert env.attrs()["last_error"] == "stale_day"
 
 
-async def test_edit_info_longest_error_fits(env):
+SET_DAY_ERRORS = {
+    "stale_day": "stale_day",
+    "conflict": "conflict",
+    "day_locked": "day_locked",
+    "invalid_bands": "invalid_bands",
+    "temperature_out_of_range": "temp_range",
+    "invalid_program": "invalid_program",
+}
+
+
+@pytest.mark.parametrize("code", sorted(SET_DAY_ERRORS))
+async def test_edit_info_error_codes_are_short(env, code):
+    from custom_components.cronotermostato.sensor import edit_info
+
+    # the worst case: 3-digit room count, holiday, 12-hex revision
+    info = edit_info("holiday", 999, "0123456789ab", code)
+    assert info == f"holiday;999;0123456789ab;{SET_DAY_ERRORS[code]}"
+    assert len(info.encode()) <= 48  # the Tessera core cuts texts at 48
+
+
+async def test_edit_info_uses_short_code_but_attribute_keeps_long_one(env):
     await env.go(datetime(2026, 11, 1, 0, 0, 1, tzinfo=TZ))
     env.entry.runtime_data.manager.last_errors[ROOM] = "temperature_out_of_range"
-    from custom_components.cronotermostato.const import SIGNAL_ROOM_UPDATED
-    from homeassistant.helpers.dispatcher import async_dispatcher_send
-
     async_dispatcher_send(env.hass, SIGNAL_ROOM_UPDATED.format(ROOM))
     await env.hass.async_block_till_done()
-    info = env.attrs()["edit_info"]
-    assert info.endswith(";temperature_out_of_range")
-    assert len(info) <= 64
+    assert env.attrs()["edit_info"] == f"holiday;1;{_rev(env)};temp_range"
+    assert env.attrs()["last_error"] == "temperature_out_of_range"
+
+
+async def test_every_set_day_error_has_a_short_code(env):
+    import json
+    from pathlib import Path
+
+    import custom_components.cronotermostato as pkg
+    from custom_components.cronotermostato.sensor import EDIT_ERROR_CODES
+
+    data = json.loads((Path(pkg.__file__).parent / "strings.json").read_text())
+    raised = set(SET_DAY_ERRORS)
+    assert EDIT_ERROR_CODES == {"temperature_out_of_range": "temp_range"}
+    assert all(len(EDIT_ERROR_CODES.get(k, k)) <= 15 for k in raised)
+    assert raised <= set(data["exceptions"])
 
 
 async def test_edit_info_revision_follows_set_day_and_update_program(env):
@@ -646,3 +680,84 @@ def test_conflict_is_translated_with_its_placeholders(name):
     message = data["exceptions"]["conflict"]["message"]
     assert "{revision}" in message and "{base_revision}" in message
     assert "base_revision" in data["services"]["set_day"]["fields"]
+
+
+# -- edit_seq -------------------------------------------------------------
+
+
+def _state_events(env, sensor=SENSOR):
+    events = []
+    env.hass.bus.async_listen(
+        "state_changed",
+        lambda e: events.append(e) if e.data["entity_id"] == sensor else None,
+    )
+    return events
+
+
+async def test_edit_seq_starts_at_zero_and_is_a_number(env):
+    assert env.attrs()["edit_seq"] == 0
+    assert type(env.attrs()["edit_seq"]) is int
+    assert "edit_seq" in RoomProgramSensor._unrecorded_attributes
+    assert "edit_n" in RoomProgramSensor._unrecorded_attributes
+    assert "today_flags" in RoomProgramSensor._unrecorded_attributes
+
+
+async def test_two_identical_refusals_are_two_state_changes(env):
+    events = _state_events(env)
+    with pytest.raises(ServiceValidationError):
+        await env.set_day("tue", "")
+    with pytest.raises(ServiceValidationError):
+        await env.set_day("tue", "")
+    await env.hass.async_block_till_done()
+    assert len(events) == 2
+    assert [e.data["new_state"].attributes["edit_seq"] for e in events] == [1, 2]
+    assert env.attrs()["last_error"] == "stale_day"
+
+
+async def test_edit_seq_survives_success_and_counts_every_room_apart(env):
+    await env.store.async_assign(ROOM2, env.program.id)
+    await env.hass.async_block_till_done()
+    with pytest.raises(ServiceValidationError):
+        await env.set_day("tue", "", room=ROOM)
+    with pytest.raises(ServiceValidationError):
+        await env.set_day("mon", "garbage", room=ROOM)
+    await env.set_day("mon", "08:00-12:00 heat 25", room=ROOM)
+    assert env.attrs()["edit_seq"] == 2  # not reset by the success
+    assert env.attrs()["last_error"] is None
+    assert env.attrs(SENSOR2)["edit_seq"] == 0
+    with pytest.raises(ServiceValidationError):
+        await env.set_day("tue", "", room=ROOM2)
+    assert env.attrs(SENSOR2)["edit_seq"] == 1
+    assert env.attrs()["edit_seq"] == 2
+
+
+async def test_edit_seq_not_bumped_by_success_or_unassigned_room(env):
+    await env.set_day("mon", "08:00-12:00 heat 25")
+    assert env.attrs()["edit_seq"] == 0
+    with pytest.raises(ServiceValidationError):
+        await env.set_day("mon", "", room=ROOM2)
+    assert env.entry.runtime_data.manager.error_seq.get(ROOM2, 0) == 0
+
+
+async def test_edit_seq_restarts_with_the_manager(env):
+    with pytest.raises(ServiceValidationError):
+        await env.set_day("tue", "")
+    assert env.attrs()["edit_seq"] == 1
+    await env.hass.config_entries.async_reload(env.entry.entry_id)
+    await env.hass.async_block_till_done()
+    assert env.attrs()["edit_seq"] == 0
+
+
+async def test_conflict_bumps_edit_seq(env):
+    with pytest.raises(ServiceValidationError):
+        await env.set_day("mon", "", base_revision="nope")
+    assert env.attrs()["edit_seq"] == 1
+
+
+async def test_manager_stop_clears_error_seq(env):
+    manager = env.entry.runtime_data.manager
+    with pytest.raises(ServiceValidationError):
+        await env.set_day("tue", "")
+    assert manager.error_seq == {ROOM: 1}
+    await manager.async_stop()
+    assert manager.error_seq == {} and manager.last_errors == {}

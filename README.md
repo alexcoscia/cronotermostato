@@ -4,7 +4,7 @@ Home Assistant custom integration (HACS): reusable weekly thermostat programs
 (time slots with mode and temperature, plus a holiday day chosen by country),
 assigned to any number of `climate` entities ("rooms"), with a manual override.
 
-Status: version 0.3.1, **not yet tested on a live Home Assistant** (neither the integration nor
+Status: version 0.3.2, **not yet tested on a live Home Assistant** (neither the integration nor
 the editor). Parts 1 and 2 of 3 (the integration and its editor) are in this repository; the Tessera
 tile is a separate project.
 
@@ -333,9 +333,10 @@ For each assigned room (one device per room; entity ids use the room name, in It
   - `today_start`, `today_end` (minutes from midnight, wall clock), `today_mode`
     (`0` off, `1` heat, `2` cool), `today_temp`, `today_auto` (`1` for the automatic `off`
     bands that fill the gaps, else `0`: numbers, because Tessera drops lists of booleans): parallel lists with the normalized bands of today's local date
-    (holiday or weekday of the assigned program). `today_temp` is `-100` for a band without
+    (holiday or weekday of the assigned program), taken from the program (wall-clock minutes), not from the real clock. `today_temp` is `-100` for a band without
     temperature (`off`, or a preset only). On a day with 23 or 25 hours the times stay wall-clock
-    (as in the program); a band lying entirely in the spring gap is left out. The lists are empty
+    (as in the program) and **all** the bands of the program are listed, also one lying inside
+    the spring gap (the slots, which follow the real clock, skip it). The lists are empty
     when the room is paused (see `status`) or has no program. They follow the program, not a
     manual override. At midnight the sensor refreshes by itself.
   - `slot_mode`, `slot_temp`, `slot_start_time`, `slot_end_time`, `next_mode`, `next_temp`,
@@ -352,11 +353,21 @@ For each assigned room (one device per room; entity ids use the room name, in It
     clears it). Example: `program_name: Casa`, `program_rooms: 3`, `today_kind: mon`,
     `last_error: null`. `last_error` is also cleared at midnight and at every restart/reload.
     Like the other flat attributes they are not recorded in the history.
-  - `edit_info`: the same facts in one text, for displays that read few attributes:
-    `<today_kind>;<program_rooms>;<program_revision>;<last_error>`, an empty field when missing.
-    `program_revision` is the 12-hex-digit fingerprint of the assigned program (the `revision`
-    of the WebSocket API; it changes with any change of the program, name included). Examples:
-    `mon;3;a1b2c3d4e5f6;` and `holiday;1;a1b2c3d4e5f6;stale_day` (at most 48 characters).
+  - `edit_info`: the same facts in one text (at most 40 characters, the Tessera core cuts texts
+    at 48): `<today_kind>;<program_rooms>;<program_revision>;<last_error>`, an empty field when
+    missing. `program_revision` is the 12-hex-digit fingerprint of the assigned program (the
+    `revision` of the WebSocket API; it changes with any change of the program, name included).
+    The error is a **short code**: `stale_day`, `conflict`, `day_locked`, `invalid_bands`,
+    `invalid_program` as they are, and `temp_range` for `temperature_out_of_range` (the separate
+    `last_error` attribute keeps the long code). Examples: `mon;3;a1b2c3d4e5f6;` and
+    `holiday;1;a1b2c3d4e5f6;stale_day`.
+  - `edit_seq`: number, how many `set_day` attempts of this room were refused since the start
+    (it never goes back, not even after a success; a restart or reload resets it). It makes the
+    sensor change state at **every** refusal, also when the code is the same as before.
+  - `edit_n`: number, how many entries the `today_*` lists have (a display compares it with the
+    length of the lists it received, to notice a truncation).
+  - `today_flags`: list of numbers parallel to `today_*`: bit 1 (`1`) automatic band, bit 2 (`2`)
+    locked band (`today_auto` and `today_locked` stay as they are). A locked user band is `2`.
   - `today_preset` and `today_locked`: parallel to `today_*` (one entry per band, automatic
     bands included). `today_preset` is the preset name of the band, `""` if none (always `""` for
     automatic bands). `today_locked` is `1` when a display must **not** edit the band because it

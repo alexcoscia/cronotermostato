@@ -30,6 +30,10 @@ class Manager:
         self.last_errors: dict[str, str] = {}
         """Code of the last failed ``set_day`` of each room (not persistent; a
         success or the end of the assignment removes it)."""
+        self.error_seq: dict[str, int] = {}
+        """Failed ``set_day`` attempts per room, never reset by a success (a
+        repeated refusal with the same code still changes the sensor); cleared
+        when the manager stops."""
         self._lock = asyncio.Lock()
         self._unsub: Callable[[], None] | None = None
         self._stopped = True
@@ -50,6 +54,7 @@ class Manager:
         async with self._lock:
             controllers, self.controllers = list(self.controllers.values()), {}
             self.last_errors.clear()
+            self.error_seq.clear()
             for controller in controllers:
                 await controller.async_stop()
 
