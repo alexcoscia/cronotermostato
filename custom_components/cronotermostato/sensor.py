@@ -16,7 +16,7 @@ from . import CronoConfigEntry, CronoData
 from .const import SIGNAL_ROOMS_CHANGED
 from .engine.bands_text import band_problem
 from .engine.day import program_views
-from .engine.models import Mode, Program
+from .engine.models import Mode, Program, program_revision
 from .engine.timeline import Slot
 from .entity import EntityTracker, RoomEntity, slot_dict
 
@@ -71,12 +71,16 @@ TILE_ATTRIBUTES = frozenset(
 EDIT_ATTRIBUTES = frozenset(
     {
         "program_name", "program_rooms", "today_kind", "last_error",
-        "today_preset", "today_locked",
+        "today_preset", "today_locked", "edit_info",
     }
 )
 """Flat attributes for editing today's bands from a display: the shared
 program, how many rooms use it, which day is edited (``mon`` .. ``sun`` or
-``holiday``) and the code of the last refused ``set_day`` of the room."""
+``holiday``) and the code of the last refused ``set_day`` of the room.
+``edit_info`` packs the same facts plus the revision of the program into one
+text for displays that read few attributes:
+``<today_kind>;<program_rooms>;<program_revision>;<last_error>`` (an empty
+field when missing; the revision is 12 hex characters, never a ``;``)."""
 
 
 def _iso(moment: datetime | None) -> str | None:
@@ -156,15 +160,20 @@ class RoomProgramSensor(RoomEntity, SensorEntity):
 
     def _edit(self, controller: Any) -> dict[str, Any]:
         program = self._program
+        rooms = sum(
+            1
+            for a in self._data.store.assignments.values()
+            if program and a.program_id == program.id
+        )
+        kind = controller.today_kind()
+        error = self._data.manager.last_errors.get(self._climate_id)
+        revision = program_revision(program) if program else ""
         return {
             "program_name": program.name if program else None,
-            "program_rooms": sum(
-                1
-                for a in self._data.store.assignments.values()
-                if program and a.program_id == program.id
-            ),
-            "today_kind": controller.today_kind(),
-            "last_error": self._data.manager.last_errors.get(self._climate_id),
+            "program_rooms": rooms,
+            "today_kind": kind,
+            "last_error": error,
+            "edit_info": f"{kind};{rooms};{revision};{error or ''}",
         }
 
     @property

@@ -4,7 +4,7 @@ Home Assistant custom integration (HACS): reusable weekly thermostat programs
 (time slots with mode and temperature, plus a holiday day chosen by country),
 assigned to any number of `climate` entities ("rooms"), with a manual override.
 
-Status: version 0.3.0, **not yet tested on a live Home Assistant** (neither the integration nor
+Status: version 0.3.1, **not yet tested on a live Home Assistant** (neither the integration nor
 the editor). Parts 1 and 2 of 3 (the integration and its editor) are in this repository; the Tessera
 tile is a separate project.
 
@@ -251,7 +251,8 @@ data:
 ### `cronotermostato.set_day`
 
 Replaces **the bands you set for today** in the program of a room (made for the Tessera
-display, but usable from anywhere). Fields: `climate_entity_id`, `day_kind` and `bands`.
+display, but usable from anywhere). Fields: `climate_entity_id`, `day_kind`, `bands` and, optional,
+`base_revision`.
 
 **The program is shared**: the change applies to every room that uses it, and to every
 future occurrence of that weekday (or of the holiday day). The other days and the name are
@@ -283,8 +284,14 @@ left unchanged. Like the other services, it is open to every authenticated user.
   same as `set_manual`: its `min_temp`/`max_temp`, else 5-35): a band outside them fails with
   `temperature_out_of_range` and nothing is written. The program is shared, so another room that
   uses it, with narrower limits, may still show `out_of_range` when it applies the band.
-- **Last writer wins**: there is no revision check, also between the Home Assistant editor and a
-  display. If both change the same day, the later save silently overwrites the earlier one.
+- `base_revision` (optional text) is the revision of the program the caller last read: the third
+  field of the room sensor's `edit_info`. If it differs from the program's revision now, the call
+  fails with `conflict` and nothing is written (`last_error` becomes `conflict`). **Without it the
+  last writer wins**: the later save silently overwrites the earlier one. The Tessera display
+  always sends it; the Home Assistant editor has its own check (`expected_revision`).
+- Order of the checks (the first failure wins, nothing is written): room assigned
+  (`room_not_assigned`), `stale_day`, `conflict`, `day_locked`, `invalid_bands`,
+  `temperature_out_of_range`, `invalid_program`.
 - A day that cannot be written in this text is **never changed by `set_day`**: if the stored bands of
   that day have a preset outside `[A-Za-z0-9_-]` (or longer than 40 characters) or a temperature
   with more than two decimals (or negative, or 1000 and over), the call fails with `day_locked`;
@@ -303,7 +310,7 @@ data:
   bands: "07:00-09:00 heat 21; 18:00-22:30 heat 20,5; 22:30-24:00 heat preset=eco"
 ```
 
-Errors: `stale_day` (the day is not today's), `day_locked`, `temperature_out_of_range`, `invalid_bands` (with the band number and the
+Errors: `stale_day` (the day is not today's), `conflict` (the program changed since `base_revision`), `day_locked`, `temperature_out_of_range`, `invalid_bands` (with the band number and the
 column of the problem, for example `band 2, column 34: unknown mode 'warm' (use heat, cool or
 off)`), `room_not_assigned`. The room sensor also keeps the code of the last refused attempt in
 `last_error`.
@@ -340,11 +347,16 @@ For each assigned room (one device per room; entity ids use the room name, in It
     the program is shared, a change from `set_day` applies to all of them), `today_kind`
     (`mon` .. `sun`, or `holiday` when today is a public holiday, consistent with `holiday`;
     it is the day `set_day` edits; changes at midnight) and `last_error` (code of the last
-    `set_day` of this room that was refused: `stale_day`, `invalid_bands` or `invalid_program`;
+    `set_day` of this room that was refused: `stale_day`, `conflict`, `day_locked`, `invalid_bands`, `temperature_out_of_range` or `invalid_program`;
     `null` after a successful attempt or when there is none; kept in memory only, so a restart
     clears it). Example: `program_name: Casa`, `program_rooms: 3`, `today_kind: mon`,
     `last_error: null`. `last_error` is also cleared at midnight and at every restart/reload.
     Like the other flat attributes they are not recorded in the history.
+  - `edit_info`: the same facts in one text, for displays that read few attributes:
+    `<today_kind>;<program_rooms>;<program_revision>;<last_error>`, an empty field when missing.
+    `program_revision` is the 12-hex-digit fingerprint of the assigned program (the `revision`
+    of the WebSocket API; it changes with any change of the program, name included). Examples:
+    `mon;3;a1b2c3d4e5f6;` and `holiday;1;a1b2c3d4e5f6;stale_day` (at most 48 characters).
   - `today_preset` and `today_locked`: parallel to `today_*` (one entry per band, automatic
     bands included). `today_preset` is the preset name of the band, `""` if none (always `""` for
     automatic bands). `today_locked` is `1` when a display must **not** edit the band because it

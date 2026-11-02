@@ -136,3 +136,8 @@ set_day:
       selector:
         text:
           multiline: true
+    base_revision:
+      required: false
+      example: "a1b2c3d4e5f6"
+      selector:
+        text:

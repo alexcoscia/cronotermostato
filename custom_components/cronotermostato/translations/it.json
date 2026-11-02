@@ -96,6 +96,9 @@
     "invalid_bands": {
       "message": "Fasce non valide: {detail}"
     },
+    "conflict": {
+      "message": "Il programma è cambiato da quando il display lo ha letto (revisione {revision} invece di {base_revision}): non è stato modificato nulla."
+    },
     "day_locked": {
       "message": "Le fasce di {day_kind} contengono un'impostazione che non si può scrivere nel testo (per esempio un nome di preset insolito o una temperatura con più di due decimali). Cambia questo giorno nell'editor."
     }
@@ -257,6 +260,10 @@
         "bands": {
           "name": "Fasce",
           "description": "Fasce separate da punto e virgola, ciascuna HH:MM-HH:MM modo [temperatura] [preset=nome], per esempio 07:00-22:00 heat 20,5; 22:00-24:00 off. Vuoto significa nessuna fascia."
+        },
+        "base_revision": {
+          "name": "Revisione di partenza",
+          "description": "La revisione del programma letta per ultima da chi chiama (terzo campo di edit_info del sensore della stanza). Se il programma è cambiato nel frattempo la chiamata fallisce con conflict e non scrive nulla. Facoltativa: senza, vince l'ultimo che scrive."
         }
       }
     }

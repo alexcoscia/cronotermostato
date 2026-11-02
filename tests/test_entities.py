@@ -597,6 +597,10 @@ async def test_midnight_without_change_writes_nothing(env):
     old = dict(events[0].data["old_state"].attributes)
     new = dict(events[0].data["new_state"].attributes)
     assert (old.pop("today_kind"), new.pop("today_kind")) == ("mon", "tue")
+    # edit_info carries the day kind, nothing else changes
+    o_info, n_info = old.pop("edit_info"), new.pop("edit_info")
+    assert o_info.split(";")[0] == "mon" and n_info.split(";")[0] == "tue"
+    assert o_info.split(";")[1:] == n_info.split(";")[1:]
     assert old == new
     assert env.hass.states.get(SENSOR).attributes["today_mode"] == [0, 1, 0, 1, 0]
 

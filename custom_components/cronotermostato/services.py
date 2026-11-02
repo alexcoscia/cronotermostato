@@ -44,6 +44,7 @@ from .engine.models import (
     Program,
     ProgramError,
     program_from_dict,
+    program_revision,
     text_from_minutes,
 )
 from .manager import Manager
@@ -98,6 +99,7 @@ SET_DAY_SCHEMA = vol.Schema(
         vol.Required("climate_entity_id"): _CLIMATE,
         vol.Required("day_kind"): vol.In((*DAY_KINDS, HOLIDAY_KIND)),
         vol.Required("bands"): cv.string,
+        vol.Optional("base_revision"): cv.string,
     }
 )
 
@@ -206,17 +208,25 @@ async def async_set_day(
     climate_id: str,
     day_kind: str,
     bands_text: str,
+    base_revision: str | None = None,
 ) -> bool:
     """Replace the user bands of today's day of the room's (shared) program.
 
     ``day_kind`` is the day the caller believes it is editing; if the room's
-    today is another one the call is refused (``stale_day``). The code of the
+    today is another one the call is refused (``stale_day``). Checks, in
+    order: room assigned, ``stale_day``, ``conflict`` (only if
+    ``base_revision`` is given and differs from ``program_revision`` of the
+    program now), ``day_locked``, ``invalid_bands``,
+    ``temperature_out_of_range``, ``invalid_program``; the first failure wins
+    and nothing is written. Without ``base_revision`` the last writer wins. The code of the
     last failed attempt of an assigned room is kept in ``manager.last_errors``
     (a success removes it) and the room sensor is told. Returns whether the
     program changed.
     """
     try:
-        changed = await _set_day(hass, manager, climate_id, day_kind, bands_text)
+        changed = await _set_day(
+            hass, manager, climate_id, day_kind, bands_text, base_revision
+        )
     except ServiceValidationError as err:
         if err.translation_key != "room_not_assigned":
             manager.last_errors[climate_id] = str(err.translation_key)
@@ -229,7 +239,11 @@ async def async_set_day(
 
 async def _set_day(
     hass: HomeAssistant,
-    manager: Manager, climate_id: str, day_kind: str, bands_text: str
+    manager: Manager,
+    climate_id: str,
+    day_kind: str,
+    bands_text: str,
+    base_revision: str | None = None,
 ) -> bool:
     controller = await _controller(manager, climate_id)
     today_kind = controller.today_kind()
@@ -237,6 +251,13 @@ async def _set_day(
         raise _error("stale_day", day_kind=day_kind, today_kind=today_kind)
     store = manager.store
     program = store.programs[store.assignments[climate_id].program_id]
+    if base_revision is not None and base_revision != program_revision(program):
+        raise _error(
+            "conflict",
+            base_revision=base_revision,
+            revision=program_revision(program),
+            program=program.name,
+        )
     current = program.holiday if day_kind == HOLIDAY_KIND else program.week[
         DAY_KINDS.index(day_kind)
     ]
@@ -360,6 +381,7 @@ def async_register_services(hass: HomeAssistant) -> None:
             call.data["climate_entity_id"],
             call.data["day_kind"],
             call.data["bands"],
+            call.data.get("base_revision"),
         )
 
     reg = hass.services.async_register

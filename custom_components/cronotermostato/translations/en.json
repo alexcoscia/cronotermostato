@@ -96,6 +96,9 @@
     "invalid_bands": {
       "message": "Invalid bands: {detail}"
     },
+    "conflict": {
+      "message": "The program changed since the display read it (revision {revision} instead of {base_revision}): nothing was changed."
+    },
     "day_locked": {
       "message": "The bands of {day_kind} contain a setting that cannot be written in the text (for example an unusual preset name or a temperature with more than two decimals). Change this day in the editor."
     }
@@ -257,6 +260,10 @@
         "bands": {
           "name": "Bands",
           "description": "Bands separated by semicolons, each HH:MM-HH:MM mode [temperature] [preset=name], for example 07:00-22:00 heat 20.5; 22:00-24:00 off. Empty means no bands."
+        },
+        "base_revision": {
+          "name": "Base revision",
+          "description": "The revision of the program the caller last read (third field of the room sensor's edit_info). If the program has changed since, the call fails with conflict and nothing is written. Optional: without it the last writer wins."
         }
       }
     }

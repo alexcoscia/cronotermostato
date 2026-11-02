@@ -12,7 +12,7 @@ from pytest_homeassistant_custom_component.common import (
 )
 
 from custom_components.cronotermostato.const import CONF_COUNTRY, CONF_SUBDIV, DOMAIN
-from custom_components.cronotermostato.engine.models import Band
+from custom_components.cronotermostato.engine.models import Band, program_revision
 from custom_components.cronotermostato.sensor import RoomProgramSensor
 
 TZ = ZoneInfo("Europe/Rome")
@@ -71,13 +71,11 @@ async def env(hass, freezer):
     await hass.async_block_till_done()
     calls.clear()
 
-    async def set_day(day_kind="mon", bands="", room=ROOM):
-        await hass.services.async_call(
-            DOMAIN,
-            "set_day",
-            {"climate_entity_id": room, "day_kind": day_kind, "bands": bands},
-            blocking=True,
-        )
+    async def set_day(day_kind="mon", bands="", room=ROOM, base_revision=None):
+        data = {"climate_entity_id": room, "day_kind": day_kind, "bands": bands}
+        if base_revision is not None:
+            data["base_revision"] = base_revision
+        await hass.services.async_call(DOMAIN, "set_day", data, blocking=True)
         await hass.async_block_till_done()
 
     async def go(when):
@@ -503,3 +501,148 @@ async def test_set_day_across_dst_changes(env, when):
         await env.set_day("sat", "")
     await env.set_day("sun", "02:00-03:00 off")
     assert env.program_now().week[6] == (Band(120, 180, "off"),)
+
+
+# -- edit_info and base_revision (step A3) ------------------------------
+
+
+def _rev(env):
+    return program_revision(env.program_now())
+
+
+async def test_edit_info_exact_format(env):
+    info = env.attrs()["edit_info"]
+    assert info == f"mon;1;{_rev(env)};"
+    kind, rooms, revision, error = info.split(";")
+    assert (kind, rooms, error) == ("mon", "1", "")
+    assert len(revision) == 12 and int(revision, 16) >= 0
+    assert "edit_info" in RoomProgramSensor._unrecorded_attributes
+
+
+async def test_edit_info_holiday_and_last_error(env):
+    await env.go(datetime(2026, 11, 1, 0, 0, 1, tzinfo=TZ))
+    assert env.attrs()["edit_info"] == f"holiday;1;{_rev(env)};"
+    with pytest.raises(ServiceValidationError):
+        await env.set_day("mon", "")
+    assert env.attrs()["edit_info"] == f"holiday;1;{_rev(env)};stale_day"
+    assert env.attrs()["last_error"] == "stale_day"
+
+
+async def test_edit_info_longest_error_fits(env):
+    await env.go(datetime(2026, 11, 1, 0, 0, 1, tzinfo=TZ))
+    env.entry.runtime_data.manager.last_errors[ROOM] = "temperature_out_of_range"
+    from custom_components.cronotermostato.const import SIGNAL_ROOM_UPDATED
+    from homeassistant.helpers.dispatcher import async_dispatcher_send
+
+    async_dispatcher_send(env.hass, SIGNAL_ROOM_UPDATED.format(ROOM))
+    await env.hass.async_block_till_done()
+    info = env.attrs()["edit_info"]
+    assert info.endswith(";temperature_out_of_range")
+    assert len(info) <= 64
+
+
+async def test_edit_info_revision_follows_set_day_and_update_program(env):
+    before = env.attrs()["edit_info"]
+    await env.set_day("mon", "08:00-12:00 heat 25")
+    after_set = env.attrs()["edit_info"]
+    assert after_set != before and after_set == f"mon;1;{_rev(env)};"
+    await env.store.async_update_program(env.program.id, name="Villa")
+    await env.hass.async_block_till_done()
+    # the name is part of the program, hence of its revision
+    assert env.attrs()["edit_info"] == f"mon;1;{_rev(env)};"
+    assert env.attrs()["edit_info"] != after_set
+
+
+async def test_edit_info_two_rooms_same_program(env):
+    await env.store.async_assign(ROOM2, env.program.id)
+    await env.hass.async_block_till_done()
+    assert env.attrs()["edit_info"] == env.attrs(SENSOR2)["edit_info"]
+    assert env.attrs()["edit_info"] == f"mon;2;{_rev(env)};"
+    await env.set_day("mon", "08:00-12:00 heat 25", room=ROOM2)
+    assert env.attrs()["edit_info"] == env.attrs(SENSOR2)["edit_info"]
+    assert env.attrs()["edit_info"] == f"mon;2;{_rev(env)};"
+
+
+async def test_edit_info_no_extra_write(env):
+    events = []
+    env.hass.bus.async_listen(
+        "state_changed",
+        lambda e: events.append(e) if e.data["entity_id"] == SENSOR else None,
+    )
+    await env.set_day("mon", "08:00-12:00 heat 23; 18:00-23:00 heat 20")
+    assert events == []
+
+
+async def test_base_revision_current_is_accepted(env):
+    await env.set_day("mon", "08:00-12:00 heat 25", base_revision=_rev(env))
+    assert env.program_now().week[0] == (Band(480, 720, "heat", 25.0),)
+    assert env.attrs()["last_error"] is None
+
+
+async def test_base_revision_old_is_a_conflict(env):
+    old = _rev(env)
+    await env.set_day("mon", "08:00-12:00 heat 25")
+    saved = []
+    env.store._store.async_save = lambda data: saved.append(data) or _done()
+    env.calls.clear()
+    stored = env.program_now()
+    with pytest.raises(ServiceValidationError) as err:
+        await env.set_day("mon", "08:00-12:00 heat 21", base_revision=old)
+    assert err.value.translation_key == "conflict"
+    assert err.value.translation_placeholders == {
+        "base_revision": old,
+        "revision": _rev(env),
+        "program": "Casa",
+    }
+    assert env.program_now() is stored
+    assert saved == [] and env.calls == []
+    assert env.attrs()["last_error"] == "conflict"
+    assert env.attrs()["edit_info"] == f"mon;1;{_rev(env)};conflict"
+    # retrying with the new revision works and clears the error
+    await env.set_day("mon", "08:00-12:00 heat 21", base_revision=_rev(env))
+    assert env.program_now().week[0] == (Band(480, 720, "heat", 21.0),)
+    assert env.attrs()["last_error"] is None
+
+
+async def test_base_revision_garbage_is_a_conflict(env):
+    with pytest.raises(ServiceValidationError) as err:
+        await env.set_day("mon", "", base_revision="nope")
+    assert err.value.translation_key == "conflict"
+    assert env.program_now().week[0] == DAY
+
+
+async def test_stale_day_is_checked_before_conflict(env):
+    with pytest.raises(ServiceValidationError) as err:
+        await env.set_day("tue", "", base_revision="nope")
+    assert err.value.translation_key == "stale_day"
+
+
+async def test_conflict_is_checked_before_bands(env):
+    with pytest.raises(ServiceValidationError) as err:
+        await env.set_day("mon", "garbage", base_revision="nope")
+    assert err.value.translation_key == "conflict"
+
+
+async def test_conflict_after_other_room_changed_shared_program(env):
+    await env.store.async_assign(ROOM2, env.program.id)
+    await env.hass.async_block_till_done()
+    seen = env.attrs()["edit_info"].split(";")[2]
+    await env.set_day("mon", "08:00-12:00 heat 25", room=ROOM2, base_revision=seen)
+    with pytest.raises(ServiceValidationError) as err:
+        await env.set_day("mon", "08:00-12:00 heat 19", room=ROOM, base_revision=seen)
+    assert err.value.translation_key == "conflict"
+    assert env.program_now().week[0] == (Band(480, 720, "heat", 25.0),)
+    assert env.attrs(SENSOR2)["last_error"] is None
+
+
+@pytest.mark.parametrize("name", ["strings.json", "translations/en.json", "translations/it.json"])
+def test_conflict_is_translated_with_its_placeholders(name):
+    import json
+    from pathlib import Path
+
+    import custom_components.cronotermostato as pkg
+
+    data = json.loads((Path(pkg.__file__).parent / name).read_text())
+    message = data["exceptions"]["conflict"]["message"]
+    assert "{revision}" in message and "{base_revision}" in message
+    assert "base_revision" in data["services"]["set_day"]["fields"]
