@@ -36,3 +36,22 @@ stato di salvataggio (in attesa/ok/errore/timeout).
 **D — Interfaccia**: card in modifica, pannello fascia, opzione `edit` del tile (attiva), traduzioni en/it.
 **E — Revisione finale e prova su schermo con la stanza di prova** (`climate.termostato_casa`; la modifica cambia un
 programma: usare un programma di prova assegnato solo alla stanza di prova).
+
+## Esiti dello spike (passo B, `~/tessera-cronotermostato/docs/SPIKE_MODIFICA.md`) e decisioni conseguenti
+- **Pannello = card, non popup** (il popup su CYD taglia la riga Elimina/Salva, non scorre e non riceve `on_state`). La card
+  riceve `on_state` anche con un popup sopra. Un solo `on_tap` per card: i tasti si riconoscono con `tessera::tap_point()`.
+- **Righe da 7 mm:** CYD 3 (2 con intestazione), Hosyond 4, Guition 4" 6, 7B 8, 10.1" 14. Niente scorrimento: **pagine
+  con `<` `>`**. Dettaglio a 4 righe (Inizio, Fine, Modo+Temperatura, Elimina/Salva/Indietro): ci sta su tutte (CYD per 7 px,
+  senza riga di stato: lo stato di salvataggio va dentro il tasto Salva: "…", "Salvato", "Errore").
+- **Tocchi ripetuti:** due tocchi sullo stesso punto entro ~600 ms valgono come uno → **passi grandi**: orari con
+  `−1h −15 +15 +1h` (non 5 minuti); temperatura col passo del termostato.
+- **Testo del servizio:** limite 1024 byte totali nei `fields` → ≤ **960 caratteri** di fasce (16 fasce ≈ 370).
+- **Limite di 16 attributi per entità nell'opzione `room`:** oggi 15. Si fa spazio: l'integrazione aggiunge un unico attributo di
+  testo **`edit_info`** = `<today_kind>;<program_rooms>;<program_revision>;<last_error>` (gli attributi separati restano per
+  chi usa HA) più `today_preset` e `today_locked`; il manifest toglie quelli inutili (`slot_mode`, `slot_temp` se non usati).
+- **Conflitti:** il core non chiude il pannello se `on_state` cambia le fasce. Il display tiene la revisione vista
+  (`program_revision`) e, se cambia mentre è in modifica, torna all'elenco con "Cambiato altrove". L'integrazione rifiuta
+  anche con `conflict` se `set_day` riceve `base_revision` diverso da quella attuale (campo opzionale per gli altri client).
+- **Fasce bloccate** (`today_locked`) o giorno con `day_locked`: il display mostra le fasce ma non permette Salva e lo dice.
+- **Collaudo:** logica pura con test C++; lo script di tocchi su banco dello spike (`flow.py`) come prova di regressione nel
+  repo del plugin; prova su schermo vero.
