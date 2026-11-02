@@ -59,6 +59,7 @@ l'azione di un'altra integrazione si possa chiamare con l'entità del tile.
 - Tocco sulla barra → `open_card` con lo stesso messaggio (c'è anche `entities.room`): card con fino a 16 righe.
 - 2x2 ok su CYD orizzontale (nome nascosto per altezza), Guition 4", 7B, 10.1"; **non si può mettere su schede verticali a
   1 colonna** (Waveshare 4.3", CYD verticale). La 7B di Alex va in entrambe le orientazioni.
+- La tacca "adesso" e la barra usano minuti da orologio a muro 0-1440 anche nei giorni da 23/25 ore (integrazione 0.2.0).
 - Non verificato: schermo vero, HA vero, `tap_point()` sulla barra, formato di `temperature` nei servizi.
 
 ## Passi

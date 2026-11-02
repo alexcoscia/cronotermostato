@@ -189,6 +189,10 @@ class RoomController:
         except KeyError:  # the program has just been deleted
             return ()
 
+    def is_holiday_today(self) -> bool:
+        """Today's local date is a holiday (follows midnight; no evaluation)."""
+        return bool(self._calendar.is_holiday(dt_util.now().date()))
+
     # -- user actions ----------------------------------------------------
 
     async def async_set_manual(

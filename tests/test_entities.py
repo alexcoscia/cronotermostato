@@ -581,6 +581,53 @@ async def test_tile_sensor_writes_only_on_change(env):
     assert events == []
 
 
+async def test_midnight_without_change_writes_nothing(env):
+    # Monday and Tuesday have the same bands; the slot merges over midnight.
+    env.freezer.move_to(at(26, 23, 30))
+    await env.store.async_assign(ROOM, env.program.id)
+    await env.hass.async_block_till_done()
+    events = []
+    env.hass.bus.async_listen(
+        "state_changed",
+        lambda e: events.append(e) if e.data["entity_id"] == SENSOR else None,
+    )
+    await env.go(datetime(2026, 10, 27, 0, 0, 1, tzinfo=TZ))
+    assert events == []
+    assert env.hass.states.get(SENSOR).attributes["today_mode"] == [0, 1, 0, 1, 0]
+
+
+async def test_midnight_with_change_writes_state(env):
+    day = (Band(480, 720, "heat", 21.0),)
+    prog = await env.store.async_create_program("Lavoro", (day,) * 5 + ((),) * 2, ())
+    env.freezer.move_to(at(30, 23, 30))
+    await env.store.async_assign(ROOM, prog.id)
+    await env.hass.async_block_till_done()
+    events = []
+    env.hass.bus.async_listen(
+        "state_changed",
+        lambda e: events.append(e) if e.data["entity_id"] == SENSOR else None,
+    )
+    await env.go(datetime(2026, 10, 31, 0, 0, 1, tzinfo=TZ))
+    assert len(events) == 1
+
+
+async def test_holiday_follows_the_day_at_midnight(env):
+    day = (Band(480, 720, "heat", 21.0),)
+    prog = await env.store.async_create_program("Lavoro", (day,) * 7, ())
+    env.freezer.move_to(at(31, 23, 30))  # Saturday night, then All Saints
+    await env.store.async_assign(ROOM, prog.id)
+    await env.hass.async_block_till_done()
+    attrs = env.hass.states.get(SENSOR).attributes
+    assert attrs["holiday"] is False
+    assert attrs["today_mode"] == [0, 1, 0]
+    env.calls.clear()
+    await env.go(datetime(2026, 11, 1, 0, 0, 1, tzinfo=TZ))
+    attrs = env.hass.states.get(SENSOR).attributes
+    assert attrs["holiday"] is True
+    assert attrs["today_mode"] == [0]
+    assert env.calls == []  # no extra command at midnight
+
+
 async def test_unrecorded_tile_attributes():
     assert {
         *TILE_TODAY, "slot_mode", "slot_temp", "slot_start_time", "slot_end_time",

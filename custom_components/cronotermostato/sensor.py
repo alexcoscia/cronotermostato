@@ -150,7 +150,7 @@ class RoomProgramSensor(RoomEntity, SensorEntity):
                 state.override_until.isoformat() if state.override_until else None
             ),
             "auto_slot": slot.band.auto if slot else None,
-            "holiday": state.holiday,
+            "holiday": controller.is_holiday_today(),
             "status": state.status,
             **self._today(),
             **_slot_flat(slot, "slot", "slot_start_time"),
