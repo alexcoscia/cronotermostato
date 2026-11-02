@@ -35,7 +35,7 @@ Quindi, senza copiare nulla:
 - Dimensione: entità e opzioni si dividono 2,6 KB: le fasce vanno in forma compatta (liste piatte).
 
 **Integrazione 0.2.0 (solo aggiunte, mia scelta):** il sensore di stanza espone `today_start`, `today_end` (minuti dalla
-mezzanotte), `today_mode` (0 spento / 1 caldo / 2 freddo), `today_temp`, `today_auto` (liste parallele, perché i `fields`
+mezzanotte), `today_mode` (0 spento / 1 caldo / 2 freddo), `today_temp`, `today_auto` (liste parallele (più, piatti, `slot_mode`, `slot_temp`, `slot_start_time`, `slot_end_time`, `next_mode`, `next_temp`, `next_start_time`, `override_until_time`, perché i dizionari non arrivano al tile), perché i `fields`
 con `as: numbers` tengono liste di numeri e non di oggetti). Nessun attributo copiato dal climate.
 
 **Azioni:** `+`/`−` con `cronotermostato.set_manual` (così la forzatura dura fino alla fine della fascia; un
@@ -44,6 +44,22 @@ con `as: numbers` tengono liste di numeri e non di oggetti). Nessun attributo co
 l'azione di un'altra integrazione si possa chiamare con l'entità del tile.
 
 **Firmware di Alex:** serve un Tessera con API ≥ 0.15 (thermo_dial dichiara 0.12). Da chiedere ad Alex la versione.
+
+## Esiti del passo 0 (spike, `~/tessera-cronotermostato/SPIKE.md`, commit dbca4f8)
+- Il tile riceve il climate come entità sua e il sensore di stanza in `entities.room`; le liste di numeri arrivano intere
+  (3-10 fasce ≈ 0,6 KB su 2,6). **I dizionari (`slot`, `next_slot`) NON arrivano**: servono attributi piatti.
+- `slot_end` e `override_until` arrivano come testo ISO: solo i nomi che finiscono per `_at`, `_time`, `date` diventano
+  epoch → l'integrazione deve esporre anche `slot_end_time` e `override_until_time`.
+- Colori: ambra `Tone::BUSY`, blu `Tone::ACCENT`, grigio `Tone::NORMAL` + `theme::SUBTLE`, fondo `theme::TRACK`, tacca
+  `theme::INK`. Il setpoint ambra dà il warning "too faint" (lo dà anche `thermo_dial`): `--strict` non sarà pulito per
+  quello, da discutere con Alex.
+- **Azioni**: si chiamano con `entity = ""` e `climate_entity_id` nei campi (i servizi dell'integrazione non hanno
+  `entity_id`). Con `entity` vuota il tile non aspetta la risposta: il ritorno al valore reale dopo 5 s è compito del tile.
+  Il firmware non controlla `home_assistant_actions`, ma si dichiarano comunque.
+- Tocco sulla barra → `open_card` con lo stesso messaggio (c'è anche `entities.room`): card con fino a 16 righe.
+- 2x2 ok su CYD orizzontale (nome nascosto per altezza), Guition 4", 7B, 10.1"; **non si può mettere su schede verticali a
+  1 colonna** (Waveshare 4.3", CYD verticale). La 7B di Alex va in entrambe le orientazioni.
+- Non verificato: schermo vero, HA vero, `tap_point()` sulla barra, formato di `temperature` nei servizi.
 
 ## Passi
 
