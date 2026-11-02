@@ -157,6 +157,7 @@ async def test_unassigned_room(env):
     with pytest.raises(ServiceValidationError) as err:
         await env.set_day("mon", "", room=ROOM2)
     assert err.value.translation_key == "room_not_assigned"
+    assert env.entry.runtime_data.manager.last_errors == {}  # nothing to show it
     assert env.program_now().week == WEEK
 
 

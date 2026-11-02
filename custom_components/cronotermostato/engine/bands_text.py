@@ -83,8 +83,6 @@ def _parse_band(segment: str, offset: int, number: int) -> tuple[Band, int]:
     end = _minutes(match[3], match[4])
     if begin is None or end is None:
         raise fail("invalid time (use HH:MM, from 00:00 to 24:00)", start_col)
-    if begin >= MINUTES_PER_DAY:
-        raise fail("a band cannot start at 24:00", start_col)
     if end <= begin:
         raise fail("the end must be after the start", start_col)
 
