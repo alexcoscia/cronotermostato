@@ -97,6 +97,23 @@ HA: **solo con il via libera di Alex**, e nessun comando a termostati reali senz
 
 **Fase 2 (dopo la prova)**: tabella delle fasce del giorno modificabile dal pannello (design sezione 8), se l'API lo permette.
 
+## Da portare nel passo 4 (revisione del passo 2, commit 5019199: nessun bloccante)
+1. Testo ambra illegibile sul chiaro (5 avvisi del banco, come `thermo_dial`): colore (ambra/blu) solo su riempimenti
+   (barra, tacca, puntino accanto al setpoint); setpoint e pillola in `theme::INK`/`MUTED`. Da mostrare ad Alex.
+2. `preview.yaml` da rifare con i dati veri: epoch per `*_time`, sentinella -100 in `today_temp`, `next_*`, `holiday`,
+   `status: paused`, `manual` con e senza `override_until_time`, sensore non disponibile, più di 16 fasce.
+3. Nome della stanza anche a 2x2 (compatto, quando l'altezza lo consente; sul CYD 302x110 sparisce): decisione di Alex
+   (il design lo prevedeva nel 2x2).
+4. Più di 16 fasce: unire le adiacenti con stesso modo/temperatura; mai barra troncata a sinistra con tacca su binario vuoto.
+5. "Fino alle HH:MM" solo in manuale; in automatico "Auto" (fine fascia e "poi" nella card o riga a parte).
+6. Stati: `missing`, `unavailable`, `error`, `unassigned`, `unsupported_preset`, `out_of_range`, `not_running` e sensore
+   stanza `unavailable`/senza `today_start`/`wait: too_large` → pillola "non disponibile" (con `status` come stringa aperta).
+7. Stanza offline: barra spenta (`theme::TRACK`).
+8. `std::string` → `tessera::Text`; posizioni dei segmenti ricalcolate in `on_state`, non a ogni secondo; clamp 0..1440.
+9. Tocco: solo la barra apre la card; `+`/`−` e Auto/Manuale con le azioni (`entity=""` + `climate_entity_id`); card con la
+   fascia attuale evidenziata; "−" vero (U+2212) se il font lo ha; decimali con virgola in italiano; README/CHANGELOG
+   onesti su ciò che funziona; prova dei formati 3x2/4x4 e delle altre schede; annotare che `api: "0.24"` è scelta voluta.
+
 ## Non si fa senza chiedere
 Push, creazione del repository GitHub, release, comandi a termostati reali, modifiche allo Scheduler.
 
