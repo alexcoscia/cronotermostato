@@ -83,7 +83,13 @@ HA: **solo con il via libera di Alex**, e nessun comando a termostati reali senz
 ## Non si fa senza chiedere
 Push, creazione del repository GitHub, release, comandi a termostati reali, modifiche allo Scheduler.
 
-## Decisioni aperte per Alex
+## Decisioni prese da Alex (2026-11-02)
+- Tessera **0.4.93 (firmware 0.59.0)**: API plugin 0.24 disponibile (dalla 0.4.91).
+- **Il tocco sulla barra apre l'elenco delle fasce del giorno** (una *card* del plugin, API "A card"): da aggiungere al passo 5.
+- **Integrazione 0.2.0** con le fasce di oggi sul sensore di stanza: approvata.
+- Repository `tessera-cronotermostato`, solo locale.
+
+## Decisioni aperte per Alex (ormai chiuse sopra, tranne la 4)
 1. Va bene aggiungere le fasce di oggi al sensore di stanza (integrazione 0.2.0)? Il resto lo legge il tile dal climate.
    Che versione di Tessera hai (serve API ≥ 0.15)?
 2. Il tocco sulla barra: nulla (proposta), oppure apre una scheda con l'elenco delle fasce del giorno?
