@@ -99,7 +99,7 @@ async def test_services_exist_without_entry(hass):
     assert await async_setup(hass, {})
     for name in (
         "create_program", "update_program", "delete_program", "assign",
-        "unassign", "pause", "resume", "set_manual", "resume_auto",
+        "unassign", "pause", "resume", "set_manual", "resume_auto", "set_day",
     ):
         assert hass.services.has_service(DOMAIN, name)
     with pytest.raises(ServiceValidationError) as err:

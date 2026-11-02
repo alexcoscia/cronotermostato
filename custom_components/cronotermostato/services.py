@@ -32,15 +32,19 @@ from homeassistant.core import (
 )
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv, entity_registry as er
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 
-from .const import DOMAIN
+from .const import DAY_KINDS, DOMAIN, HOLIDAY_KIND, SIGNAL_ROOM_UPDATED
 from .controller import RoomController
+from .engine.bands_text import BandsTextError, parse_bands
 from .engine.models import (
     DAYS_PER_WEEK,
     MODES,
+    Band,
     Program,
     ProgramError,
     program_from_dict,
+    text_from_minutes,
 )
 from .manager import Manager
 from .store import CronoStore
@@ -89,6 +93,13 @@ MANUAL_SCHEMA = vol.Schema(
         vol.Optional("preset"): vol.Any(None, cv.string),
     }
 )
+SET_DAY_SCHEMA = vol.Schema(
+    {
+        vol.Required("climate_entity_id"): _CLIMATE,
+        vol.Required("day_kind"): vol.In((*DAY_KINDS, HOLIDAY_KIND)),
+        vol.Required("bands"): cv.string,
+    }
+)
 
 
 def _error(key: str, **placeholders: str) -> ServiceValidationError:
@@ -101,6 +112,16 @@ def _error(key: str, **placeholders: str) -> ServiceValidationError:
 
 def _program_error(err: ProgramError) -> ServiceValidationError:
     return _error("invalid_program", error=str(err))
+
+
+def _raw_band(band: Band) -> dict[str, Any]:
+    return {
+        "start": text_from_minutes(band.start),
+        "end": text_from_minutes(band.end),
+        "mode": band.mode,
+        "temperature": band.temperature,
+        "preset": band.preset,
+    }
 
 
 def _manager(hass: HomeAssistant) -> Manager:
@@ -177,6 +198,65 @@ async def _controller(manager: Manager, climate_id: str) -> RoomController:
     if not assigned or controller is None:
         raise _error("room_not_assigned", entity_id=climate_id)
     return controller
+
+
+async def async_set_day(
+    hass: HomeAssistant,
+    manager: Manager,
+    climate_id: str,
+    day_kind: str,
+    bands_text: str,
+) -> bool:
+    """Replace the user bands of today's day of the room's (shared) program.
+
+    ``day_kind`` is the day the caller believes it is editing; if the room's
+    today is another one the call is refused (``stale_day``). The code of the
+    last failed attempt of an assigned room is kept in ``manager.last_errors``
+    (a success removes it) and the room sensor is told. Returns whether the
+    program changed.
+    """
+    try:
+        changed = await _set_day(manager, climate_id, day_kind, bands_text)
+    except ServiceValidationError as err:
+        if err.translation_key != "room_not_assigned":
+            manager.last_errors[climate_id] = str(err.translation_key)
+            async_dispatcher_send(hass, SIGNAL_ROOM_UPDATED.format(climate_id))
+        raise
+    if manager.last_errors.pop(climate_id, None) is not None:
+        async_dispatcher_send(hass, SIGNAL_ROOM_UPDATED.format(climate_id))
+    return changed
+
+
+async def _set_day(
+    manager: Manager, climate_id: str, day_kind: str, bands_text: str
+) -> bool:
+    controller = await _controller(manager, climate_id)
+    today_kind = controller.today_kind()
+    if day_kind != today_kind:
+        raise _error("stale_day", day_kind=day_kind, today_kind=today_kind)
+    try:
+        bands = parse_bands(bands_text)
+    except BandsTextError as err:
+        raise _error("invalid_bands", detail=str(err)) from err
+    store = manager.store
+    program = store.programs[store.assignments[climate_id].program_id]
+    new = tuple(bands)
+    if day_kind == HOLIDAY_KIND:
+        if program.holiday == new:
+            return False
+        fields = {"holiday": [_raw_band(b) for b in new]}
+    else:
+        index = DAY_KINDS.index(day_kind)
+        if program.week[index] == new:
+            return False
+        week = [[_raw_band(b) for b in day] for day in program.week]
+        week[index] = [_raw_band(b) for b in new]
+        fields = {"week": week}
+    try:
+        await async_update_program(store, program.id, **fields)
+    except ProgramError as err:
+        raise _program_error(err) from err
+    return True
 
 
 def async_register_services(hass: HomeAssistant) -> None:
@@ -256,6 +336,15 @@ def async_register_services(hass: HomeAssistant) -> None:
         )
         await controller.async_resume_auto()
 
+    async def set_day(call: ServiceCall) -> None:
+        await async_set_day(
+            hass,
+            _manager(hass),
+            call.data["climate_entity_id"],
+            call.data["day_kind"],
+            call.data["bands"],
+        )
+
     reg = hass.services.async_register
     reg(DOMAIN, "create_program", create_program, CREATE_SCHEMA,
         supports_response=SupportsResponse.OPTIONAL)
@@ -267,3 +356,4 @@ def async_register_services(hass: HomeAssistant) -> None:
     reg(DOMAIN, "resume", resume, ROOM_SCHEMA)
     reg(DOMAIN, "set_manual", set_manual, MANUAL_SCHEMA)
     reg(DOMAIN, "resume_auto", resume_auto, ROOM_SCHEMA)
+    reg(DOMAIN, "set_day", set_day, SET_DAY_SCHEMA)

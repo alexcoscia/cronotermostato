@@ -1,6 +1,6 @@
 [project]
 name = "cronotermostato"
-version = "0.2.0"
+version = "0.3.0"
 description = "Home Assistant custom integration: reusable weekly thermostat schedules"
 requires-python = ">=3.14"
 dependencies = []

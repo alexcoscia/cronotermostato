@@ -27,6 +27,9 @@ class Manager:
         self.store = store
         self._calendar = calendar
         self.controllers: dict[str, RoomController] = {}
+        self.last_errors: dict[str, str] = {}
+        """Code of the last failed ``set_day`` of each room (not persistent; a
+        success or the end of the assignment removes it)."""
         self._lock = asyncio.Lock()
         self._unsub: Callable[[], None] | None = None
         self._stopped = True
@@ -46,6 +49,7 @@ class Manager:
             self._unsub = None
         async with self._lock:
             controllers, self.controllers = list(self.controllers.values()), {}
+            self.last_errors.clear()
             for controller in controllers:
                 await controller.async_stop()
 
@@ -63,6 +67,7 @@ class Manager:
             changed = wanted != set(self.controllers)
             for climate_id in [c for c in self.controllers if c not in wanted]:
                 controller = self.controllers.pop(climate_id)
+                self.last_errors.pop(climate_id, None)
                 try:
                     await controller.async_stop()
                 except Exception:  # noqa: BLE001 - one room must not block the rest

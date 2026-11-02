@@ -67,6 +67,13 @@ TILE_ATTRIBUTES = frozenset(
     }
 )
 
+EDIT_ATTRIBUTES = frozenset(
+    {"program_name", "program_rooms", "today_kind", "last_error"}
+)
+"""Flat attributes for editing today's bands from a display: the shared
+program, how many rooms use it, which day is edited (``mon`` .. ``sun`` or
+``holiday``) and the code of the last refused ``set_day`` of the room."""
+
 
 def _iso(moment: datetime | None) -> str | None:
     return moment.isoformat() if moment else None
@@ -87,7 +94,9 @@ class RoomProgramSensor(RoomEntity, SensorEntity):
     _attr_translation_key = "program"
     _suffix = "program"
     ENTITY_DOMAIN = "sensor"
-    _unrecorded_attributes = frozenset({"slot", "next_slot"}) | TILE_ATTRIBUTES
+    _unrecorded_attributes = (
+        frozenset({"slot", "next_slot"}) | TILE_ATTRIBUTES | EDIT_ATTRIBUTES
+    )
 
     def __init__(self, hass: HomeAssistant, data: CronoData, climate_id: str) -> None:
         super().__init__(hass, data, climate_id, "programma")
@@ -125,14 +134,28 @@ class RoomProgramSensor(RoomEntity, SensorEntity):
         }
 
     @property
+    def _program(self) -> Program | None:
+        store = self._data.store
+        assignment = store.assignments.get(self._climate_id)
+        return store.programs.get(assignment.program_id) if assignment else None
+
+    @property
     def native_value(self) -> str | None:
-        assignment = self._data.store.assignments.get(self._climate_id)
-        program = (
-            self._data.store.programs.get(assignment.program_id)
-            if assignment
-            else None
-        )
+        program = self._program
         return program.name if program else None
+
+    def _edit(self, controller: Any) -> dict[str, Any]:
+        program = self._program
+        return {
+            "program_name": program.name if program else None,
+            "program_rooms": sum(
+                1
+                for a in self._data.store.assignments.values()
+                if program and a.program_id == program.id
+            ),
+            "today_kind": controller.today_kind(),
+            "last_error": self._data.manager.last_errors.get(self._climate_id),
+        }
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
@@ -157,6 +180,7 @@ class RoomProgramSensor(RoomEntity, SensorEntity):
             "slot_end_time": _iso(slot.end) if slot else None,
             **_slot_flat(state.next_slot, "next", "next_start_time"),
             "override_until_time": _iso(state.override_until),
+            **self._edit(controller),
         }
 
 

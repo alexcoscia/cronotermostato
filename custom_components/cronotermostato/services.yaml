@@ -108,3 +108,31 @@ resume_auto:
       selector:
         entity:
           domain: climate
+set_day:
+  fields:
+    climate_entity_id:
+      required: true
+      selector:
+        entity:
+          domain: climate
+    day_kind:
+      required: true
+      example: "mon"
+      selector:
+        select:
+          mode: dropdown
+          options:
+            - mon
+            - tue
+            - wed
+            - thu
+            - fri
+            - sat
+            - sun
+            - holiday
+    bands:
+      required: true
+      example: "07:00-22:00 heat 20.5; 22:00-24:00 off"
+      selector:
+        text:
+          multiline: true

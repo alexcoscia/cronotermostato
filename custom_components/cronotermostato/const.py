@@ -42,3 +42,8 @@ DEFAULT_MIN_TEMP = 5.0
 DEFAULT_MAX_TEMP = 35.0
 """Limits used when the climate entity does not declare usable ``min_temp`` /
 ``max_temp`` attributes (or has no state at all)."""
+
+DAY_KINDS: tuple[str, ...] = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+"""Day kinds of a program's week, Monday first (``Program.week`` order)."""
+HOLIDAY_KIND = "holiday"
+"""The day kind of the holiday day of a program."""

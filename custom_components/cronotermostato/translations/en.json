@@ -89,6 +89,12 @@
     },
     "temperature_out_of_range": {
       "message": "The temperature {temperature} is outside the limits of {entity_id} ({min}-{max} °C)."
+    },
+    "stale_day": {
+      "message": "The display shows {day_kind}, but today is {today_kind}: nothing was changed."
+    },
+    "invalid_bands": {
+      "message": "Invalid bands: {detail}"
     }
   },
   "entity": {
@@ -230,6 +236,24 @@
         "climate_entity_id": {
           "name": "Thermostat",
           "description": "The climate entity of the room."
+        }
+      }
+    },
+    "set_day": {
+      "name": "Set today's bands",
+      "description": "Replace the bands you set for today in the program of a room. The program is shared: every room that uses it changes. The automatic off bands are recalculated. Refused with stale_day if today is not day_kind.",
+      "fields": {
+        "climate_entity_id": {
+          "name": "Thermostat",
+          "description": "The climate entity of the room."
+        },
+        "day_kind": {
+          "name": "Day",
+          "description": "The day being edited: mon, tue, wed, thu, fri, sat, sun or holiday. It must be today's day for the room."
+        },
+        "bands": {
+          "name": "Bands",
+          "description": "Bands separated by semicolons, each HH:MM-HH:MM mode [temperature] [preset=name], for example 07:00-22:00 heat 20.5; 22:00-24:00 off. Empty means no bands."
         }
       }
     }

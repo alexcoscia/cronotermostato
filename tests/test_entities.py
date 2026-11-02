@@ -592,7 +592,12 @@ async def test_midnight_without_change_writes_nothing(env):
         lambda e: events.append(e) if e.data["entity_id"] == SENSOR else None,
     )
     await env.go(datetime(2026, 10, 27, 0, 0, 1, tzinfo=TZ))
-    assert events == []
+    # the bands did not change: the only write is the new day kind
+    assert len(events) == 1
+    old = dict(events[0].data["old_state"].attributes)
+    new = dict(events[0].data["new_state"].attributes)
+    assert (old.pop("today_kind"), new.pop("today_kind")) == ("mon", "tue")
+    assert old == new
     assert env.hass.states.get(SENSOR).attributes["today_mode"] == [0, 1, 0, 1, 0]
 
 

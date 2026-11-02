@@ -65,7 +65,14 @@ from homeassistant.helpers.event import (
 )
 from homeassistant.util import dt as dt_util
 
-from .const import DEFAULT_MAX_TEMP, DEFAULT_MIN_TEMP, DOMAIN, SIGNAL_ROOM_UPDATED
+from .const import (
+    DAY_KINDS,
+    DEFAULT_MAX_TEMP,
+    DEFAULT_MIN_TEMP,
+    DOMAIN,
+    HOLIDAY_KIND,
+    SIGNAL_ROOM_UPDATED,
+)
 from .engine.calendar import HolidayCalendar
 from .engine.models import Band, Mode, Program, ProgramError, validate_setting
 from .engine.timeline import Slot, Timeline
@@ -192,6 +199,14 @@ class RoomController:
     def is_holiday_today(self) -> bool:
         """Today's local date is a holiday (follows midnight; no evaluation)."""
         return bool(self._calendar.is_holiday(dt_util.now().date()))
+
+    def today_kind(self) -> str:
+        """Which day of the program applies to today's local date: ``mon`` ..
+        ``sun``, or ``holiday`` on a public holiday (follows midnight)."""
+        today = dt_util.now().date()
+        if self._calendar.is_holiday(today):
+            return HOLIDAY_KIND
+        return DAY_KINDS[today.weekday()]
 
     # -- user actions ----------------------------------------------------
 

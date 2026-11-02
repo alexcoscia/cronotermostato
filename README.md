@@ -4,7 +4,7 @@ Home Assistant custom integration (HACS): reusable weekly thermostat programs
 (time slots with mode and temperature, plus a holiday day chosen by country),
 assigned to any number of `climate` entities ("rooms"), with a manual override.
 
-Status: version 0.2.0, **not yet tested on a live Home Assistant** (neither the integration nor
+Status: version 0.3.0, **not yet tested on a live Home Assistant** (neither the integration nor
 the editor). Parts 1 and 2 of 3 (the integration and its editor) are in this repository; the Tessera
 tile is a separate project.
 
@@ -86,7 +86,7 @@ Colours come from the Home Assistant theme.
 - Pause, resume, manual override and "back to automatic" are open to every authenticated user, on
   purpose: they are what a wall tile or a family member needs.
 - **The `cronotermostato.*` services are not restricted**: every authenticated user can call
-  `create_program`, `update_program`, `delete_program`, `assign` and `unassign` (for example from
+  `create_program`, `update_program`, `delete_program`, `assign`, `unassign` and `set_day` (for example from
   Developer tools), whatever `admin_only` says. `admin_only` is not a security boundary.
 - Hiding the sidebar entry is only visibility: an administrator can change it in the Home Assistant
   UI, and opening `/cronotermostato` by hand as a non-administrator has not been checked yet.
@@ -247,6 +247,53 @@ data:
   climate_entity_id: climate.soggiorno
 ```
 
+### `cronotermostato.set_day`
+
+Replaces **the bands you set for today** in the program of a room (made for the Tessera
+display, but usable from anywhere). Fields: `climate_entity_id`, `day_kind` and `bands`.
+
+**The program is shared**: the change applies to every room that uses it, and to every
+future occurrence of that weekday (or of the holiday day). The other days and the name are
+left unchanged. Like the other services, it is open to every authenticated user.
+
+- `day_kind` is the day the caller believes it is editing: `mon`, `tue`, `wed`, `thu`, `fri`,
+  `sat`, `sun` or `holiday`. The integration works out today's day for the room (local time of
+  Home Assistant, public holidays of the configured country: on a holiday it is `holiday`, even on
+  a Sunday). If it is not the same, nothing is changed and the call fails with `stale_day`: a page
+  that stayed open across midnight cannot write on the wrong day.
+- `bands` is a compact text, at most 1024 characters, at most 24 bands:
+
+  ```
+  bands  := ""  |  band ( ";" band )* [ ";" ]
+  band   := HH:MM "-" HH:MM  mode  { temperature | "preset=" NAME }
+  mode   := heat | cool | off
+  ```
+
+  Times go from `00:00` to `24:00` (`24:00` only as an end; `7:00` is accepted). The temperature
+  is a number with a point or a comma and at most two decimals (`20`, `20.5`, `20,5`). `NAME` is
+  a preset of the thermostat (letters, digits, `_`, `-`, at most 40). `heat` and `cool` need a
+  temperature, a preset or both (in any order, once each); `off` takes neither. Spaces and line
+  breaks between tokens are free, the order of the bands is free, bands must not overlap.
+  An empty text removes all your bands from that day (the automatic `off` bands fill it).
+- Only your bands are written: the automatic `off` bands are recalculated and cannot be written.
+- If the resulting day is the same as the stored one, nothing is saved and nothing is re-applied.
+  Otherwise rooms using the program apply the new setting at once, like `update_program`.
+- A temperature outside the limits of a thermostat is not refused here: the room shows
+  `out_of_range` when it is applied (see Known limits).
+
+```yaml
+action: cronotermostato.set_day
+data:
+  climate_entity_id: climate.soggiorno
+  day_kind: mon
+  bands: "07:00-09:00 heat 21; 18:00-22:30 heat 20,5; 22:30-24:00 heat preset=eco"
+```
+
+Errors: `stale_day` (the day is not today's), `invalid_bands` (with the band number and the
+column of the problem, for example `band 2, column 34: unknown mode 'warm' (use heat, cool or
+off)`), `room_not_assigned`. The room sensor also keeps the code of the last refused attempt in
+`last_error`.
+
 Room services fail with an error if the room is not assigned; invalid programs
 fail with an `invalid_program` error that says what is wrong. `set_manual` with a
 temperature outside the limits of the thermostat fails with `temperature_out_of_range`.
@@ -275,6 +322,14 @@ For each assigned room (one device per room; entity ids use the room name, in It
     `null` when the slot has no temperature), and `override_until_time`. The `*_time`
     attributes are ISO 8601 timestamps with time zone, like `slot_end` and `override_until`
     (`slot_end_time` equals `slot_end`); `null` when there is no such slot or override.
+  - `program_name` (name of the program of the room), `program_rooms` (how many rooms use it:
+    the program is shared, a change from `set_day` applies to all of them), `today_kind`
+    (`mon` .. `sun`, or `holiday` when today is a public holiday, consistent with `holiday`;
+    it is the day `set_day` edits; changes at midnight) and `last_error` (code of the last
+    `set_day` of this room that was refused: `stale_day`, `invalid_bands` or `invalid_program`;
+    `null` after a successful attempt or when there is none; kept in memory only, so a restart
+    clears it). Example: `program_name: Casa`, `program_rooms: 3`, `today_kind: mon`,
+    `last_error: null`. Like the other flat attributes they are not recorded in the history.
 - `switch.<room>_automatico`: on while the room follows its program. Turning it off
   forces the current slot's setting until the slot ends; turning it on goes back to
   the program.

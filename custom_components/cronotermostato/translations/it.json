@@ -89,6 +89,12 @@
     },
     "temperature_out_of_range": {
       "message": "La temperatura {temperature} è fuori dai limiti di {entity_id} ({min}-{max} °C)."
+    },
+    "stale_day": {
+      "message": "Il display mostra {day_kind}, ma oggi è {today_kind}: non è stato modificato nulla."
+    },
+    "invalid_bands": {
+      "message": "Fasce non valide: {detail}"
     }
   },
   "entity": {
@@ -230,6 +236,24 @@
         "climate_entity_id": {
           "name": "Termostato",
           "description": "L'entità climate della stanza."
+        }
+      }
+    },
+    "set_day": {
+      "name": "Imposta le fasce di oggi",
+      "description": "Sostituisce le fasce impostate per oggi nel programma di una stanza. Il programma è condiviso: cambia per tutte le stanze che lo usano. Le fasce automatiche di spento si ricalcolano. Rifiutato con stale_day se oggi non è day_kind.",
+      "fields": {
+        "climate_entity_id": {
+          "name": "Termostato",
+          "description": "L'entità climate della stanza."
+        },
+        "day_kind": {
+          "name": "Giorno",
+          "description": "Il giorno che si sta modificando: mon, tue, wed, thu, fri, sat, sun oppure holiday. Deve essere il giorno di oggi per la stanza."
+        },
+        "bands": {
+          "name": "Fasce",
+          "description": "Fasce separate da punto e virgola, ciascuna HH:MM-HH:MM modo [temperatura] [preset=nome], per esempio 07:00-22:00 heat 20,5; 22:00-24:00 off. Vuoto significa nessuna fascia."
         }
       }
     }
