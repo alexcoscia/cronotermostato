@@ -4,7 +4,7 @@ Home Assistant custom integration (HACS): reusable weekly thermostat programs
 (time slots with mode and temperature, plus a holiday day chosen by country),
 assigned to any number of `climate` entities ("rooms"), with a manual override.
 
-Status: version 0.1.0, **not yet tested on a live Home Assistant** (neither the integration nor
+Status: version 0.2.0, **not yet tested on a live Home Assistant** (neither the integration nor
 the editor). Parts 1 and 2 of 3 (the integration and its editor) are in this repository; the Tessera
 tile is a separate project.
 
@@ -260,6 +260,21 @@ For each assigned room (one device per room; entity ids use the room name, in It
   `override_until`, `auto_slot`, `holiday` (today is a holiday), `status`.
   `status` is one of `ok`, `paused`, `unavailable`, `unsupported_mode`, `unsupported_preset`, `out_of_range`,
   `missing`, `error`.
+  Flat attributes for displays that cannot read dictionaries (the Tessera tile); they are not
+  recorded in the history:
+  - `today_start`, `today_end` (minutes from midnight, wall clock), `today_mode`
+    (`0` off, `1` heat, `2` cool), `today_temp`, `today_auto` (`1` for the automatic `off`
+    bands that fill the gaps, else `0`: numbers, because Tessera drops lists of booleans): parallel lists with the normalized bands of today's local date
+    (holiday or weekday of the assigned program). `today_temp` is `-100` for a band without
+    temperature (`off`, or a preset only). On a day with 23 or 25 hours the times stay wall-clock
+    (as in the program); a band lying entirely in the spring gap is left out. The lists are empty
+    when the room is paused (see `status`) or has no program. They follow the program, not a
+    manual override. At midnight the sensor refreshes by itself.
+  - `slot_mode`, `slot_temp`, `slot_start_time`, `slot_end_time`, `next_mode`, `next_temp`,
+    `next_start_time`: the current and the next slot (same codes as `today_mode`; `*_temp` is
+    `null` when the slot has no temperature), and `override_until_time`. The `*_time`
+    attributes are ISO 8601 timestamps with time zone, like `slot_end` and `override_until`
+    (`slot_end_time` equals `slot_end`); `null` when there is no such slot or override.
 - `switch.<room>_automatico`: on while the room follows its program. Turning it off
   forces the current slot's setting until the slot ends; turning it on goes back to
   the program.

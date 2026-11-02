@@ -49,7 +49,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 import logging
 import math
 from typing import Any, Literal
@@ -67,7 +67,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import DEFAULT_MAX_TEMP, DEFAULT_MIN_TEMP, DOMAIN, SIGNAL_ROOM_UPDATED
 from .engine.calendar import HolidayCalendar
-from .engine.models import Mode, Program, ProgramError, validate_setting
+from .engine.models import Band, Mode, Program, ProgramError, validate_setting
 from .engine.timeline import Slot, Timeline
 from .store import CronoStore, Override
 
@@ -177,6 +177,17 @@ class RoomController:
     async def async_refresh(self) -> None:
         """Recompute everything and apply the current setting."""
         await self._async_evaluate(force=True, rebuild=True)
+
+    def day_bands(self, day: date) -> tuple[Band, ...]:
+        """Normalized bands of a local day; none if there is no program to follow
+        (room not assigned or paused)."""
+        assignment = self._store.assignments.get(self._climate_id)
+        if assignment is None or assignment.paused:
+            return ()
+        try:
+            return self._get_timeline(rebuild=False).day_bands(day)
+        except KeyError:  # the program has just been deleted
+            return ()
 
     # -- user actions ----------------------------------------------------
 

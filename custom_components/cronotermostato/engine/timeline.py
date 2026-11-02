@@ -147,6 +147,15 @@ class Timeline:
             if preceding:
                 return preceding[-1]
 
+    def day_bands(self, day: date) -> tuple[Band, ...]:
+        """Normalized bands of a local day (automatic "off" bands included).
+
+        Times are wall-clock minutes from midnight, as in the program, also on
+        a day of 23 or 25 hours; a band lying entirely inside the spring gap
+        has no length and is left out, as in the slots.
+        """
+        return tuple(piece.band for piece in self._pieces(day))
+
     # --------------------------------------------------------------- slots
 
     def _extend_forward(self, piece: _Piece) -> _Piece:

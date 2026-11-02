@@ -11,7 +11,7 @@
 >   `/cronotermostato_static/<versione>-<impronta>/...`, dove l'impronta (8 caratteri esadecimali) e' lo sha256 di nomi e
 >   contenuti di tutti i file di `frontend/`, calcolata all'avvio di HA: se il codice cambia, l'URL cambia. **Resta
 >   il riavvio di HA** (a cura di Alex) per caricare il Python e il nuovo percorso statico. La versione del manifest
->   (ora **0.1.0**) la alza Alex solo per le release.
+>   (ora **0.2.0**) la alza Alex solo per le release.
 > - Lo Scheduler resta com'e' e non si tocca; la stanza di prova va tolta dallo Scheduler (o se ne disattiva solo la
 >   regola di quella stanza) per tutta la durata della prova.
 > - L'integrazione base (servizi, controllore) ha la sua lista: `docs/PROVA_SU_HA.md`. Questa copre l'editor.

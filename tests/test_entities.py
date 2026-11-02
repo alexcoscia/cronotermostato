@@ -390,3 +390,199 @@ async def test_switch_off_preset_only_slot(env):
     assert (override.mode, override.preset, override.temperature) == (
         "heat", "eco", None
     )
+
+
+# -- flat attributes for the Tessera tile ------------------------------------
+
+TILE_TODAY = ("today_start", "today_end", "today_mode", "today_temp", "today_auto")
+NO_TEMP = -100.0
+
+
+def _today(attrs):
+    return {k: attrs[k] for k in TILE_TODAY}
+
+
+async def test_tile_today_lists_with_auto_bands(env):
+    await env.store.async_assign(ROOM, env.program.id)
+    await env.hass.async_block_till_done()
+    attrs = env.hass.states.get(SENSOR).attributes
+    assert _today(attrs) == {
+        "today_start": [0, 480, 720, 1080, 1380],
+        "today_end": [480, 720, 1080, 1380, 1440],
+        "today_mode": [0, 1, 0, 1, 0],
+        "today_temp": [NO_TEMP, 23.0, NO_TEMP, 20.0, NO_TEMP],
+        "today_auto": [1, 0, 1, 0, 1],
+    }
+
+
+async def test_tile_flat_slot_attributes(env):
+    await env.store.async_assign(ROOM, env.program.id)
+    await env.hass.async_block_till_done()
+    attrs = env.hass.states.get(SENSOR).attributes
+    assert attrs["slot_mode"] == 1
+    assert attrs["slot_temp"] == 23.0
+    assert datetime.fromisoformat(attrs["slot_start_time"]) == at(26, 8)
+    assert datetime.fromisoformat(attrs["slot_end_time"]) == at(26, 12)
+    assert attrs["slot_end_time"] == attrs["slot_end"]
+    assert attrs["next_mode"] == 0
+    assert attrs["next_temp"] is None
+    assert datetime.fromisoformat(attrs["next_start_time"]) == at(26, 12)
+    assert attrs["override_until_time"] is None
+
+
+async def test_tile_attributes_follow_slot_change(env):
+    await env.store.async_assign(ROOM, env.program.id)
+    await env.hass.async_block_till_done()
+    await env.go(at(26, 12))
+    attrs = env.hass.states.get(SENSOR).attributes
+    assert attrs["slot_mode"] == 0
+    assert attrs["slot_temp"] is None
+    assert attrs["next_mode"] == 1
+    assert attrs["next_temp"] == 20.0
+    assert datetime.fromisoformat(attrs["next_start_time"]) == at(26, 18)
+
+
+async def test_tile_override_until_time(env):
+    await env.store.async_assign(ROOM, env.program.id)
+    await env.hass.async_block_till_done()
+    await env.hass.services.async_call(
+        "switch", "turn_off", {"entity_id": SWITCH}, blocking=True
+    )
+    await env.hass.async_block_till_done()
+    attrs = env.hass.states.get(SENSOR).attributes
+    assert datetime.fromisoformat(attrs["override_until_time"]) == at(26, 12)
+    assert attrs["override_until_time"] == attrs["override_until"]
+    assert attrs["today_mode"] == [0, 1, 0, 1, 0]  # the program, not the override
+
+
+async def test_tile_unassigned_room_has_empty_lists(env):
+    """An unassigned room has no sensor at all; a sensor that outlives its
+    assignment for an instant still reports empty lists and None."""
+    from custom_components.cronotermostato.controller import RoomState
+    from custom_components.cronotermostato.sensor import _slot_flat
+
+    await env.store.async_assign(ROOM, env.program.id)
+    await env.hass.async_block_till_done()
+    controller = env.entry.runtime_data.manager.controllers[ROOM]
+    await env.store.async_unassign(ROOM)
+    await env.hass.async_block_till_done()
+    assert controller.day_bands(at(26, 9).date()) == ()
+    state = RoomState()
+    assert _slot_flat(state.slot, "slot", "slot_start_time") == {
+        "slot_mode": None, "slot_temp": None, "slot_start_time": None,
+    }
+    assert _slot_flat(state.next_slot, "next", "next_start_time") == {
+        "next_mode": None, "next_temp": None, "next_start_time": None,
+    }
+
+
+async def test_tile_paused_room_has_empty_lists(env):
+    await env.store.async_assign(ROOM, env.program.id)
+    await env.hass.async_block_till_done()
+    await env.store.async_set_paused(ROOM, True)
+    await env.hass.async_block_till_done()
+    attrs = env.hass.states.get(SENSOR).attributes
+    assert attrs["status"] == "paused"
+    for key in TILE_TODAY:
+        assert attrs[key] == []
+    await env.store.async_set_paused(ROOM, False)
+    await env.hass.async_block_till_done()
+    assert env.hass.states.get(SENSOR).attributes["today_mode"] == [0, 1, 0, 1, 0]
+
+
+async def test_tile_holiday_day_uses_holiday_bands(env):
+    env.freezer.move_to(datetime(2026, 11, 1, 10, tzinfo=TZ))  # Sunday, All Saints
+    await env.store.async_assign(ROOM, env.program.id)
+    await env.hass.async_block_till_done()
+    attrs = env.hass.states.get(SENSOR).attributes
+    assert attrs["holiday"] is True
+    assert _today(attrs) == {
+        "today_start": [0], "today_end": [1440], "today_mode": [1],
+        "today_temp": [18.0], "today_auto": [0],
+    }
+
+
+async def test_tile_changes_at_midnight_without_slot_boundary(env):
+    """Night "off" bands merge over midnight: only the day change updates."""
+    day = (Band(480, 720, "heat", 21.0),)
+    prog = await env.store.async_create_program(
+        "Lavoro", (day,) * 5 + ((),) * 2, ()
+    )
+    env.freezer.move_to(at(30, 23, 30))  # Friday night
+    await env.store.async_assign(ROOM, prog.id)
+    await env.hass.async_block_till_done()
+    assert env.hass.states.get(SENSOR).attributes["today_mode"] == [0, 1, 0]
+    slot_end = env.hass.states.get(SENSOR).attributes["slot_end"]
+    await env.go(datetime(2026, 10, 31, 0, 0, 1, tzinfo=TZ))  # Saturday
+    attrs = env.hass.states.get(SENSOR).attributes
+    assert _today(attrs) == {
+        "today_start": [0], "today_end": [1440], "today_mode": [0],
+        "today_temp": [NO_TEMP], "today_auto": [1],
+    }
+    assert attrs["slot_end"] == slot_end  # same slot across midnight
+
+
+async def test_tile_dst_days_keep_wall_clock_minutes(env):
+    # 2026-03-29 has 23 hours in Rome, 2026-10-25 has 25: bands stay wall-clock.
+    for when in (datetime(2026, 3, 29, 12, tzinfo=TZ), datetime(2026, 10, 25, 12, tzinfo=TZ)):
+        env.freezer.move_to(when)
+        await env.store.async_assign(ROOM, env.program.id)
+        await env.hass.async_block_till_done()
+        attrs = env.hass.states.get(SENSOR).attributes
+        assert attrs["today_end"][-1] == 1440
+        assert attrs["today_start"][1:] == attrs["today_end"][:-1]
+
+
+async def test_tile_dst_gap_band_is_dropped(env):
+    # 02:15-02:45 does not exist on 29 March: no length, no band.
+    day = (Band(135, 165, "heat", 21.0), Band(180, 300, "heat", 19.0))
+    prog = await env.store.async_create_program("Gap", (day,) * 7, ())
+    env.freezer.move_to(datetime(2026, 3, 29, 12, tzinfo=TZ))
+    await env.store.async_assign(ROOM, prog.id)
+    await env.hass.async_block_till_done()
+    attrs = env.hass.states.get(SENSOR).attributes
+    assert 135 not in attrs["today_start"]
+    assert attrs["today_start"][0] == 0
+
+
+async def test_tile_preset_only_band_has_sentinel_temperature(env):
+    day = (Band(480, 720, "heat", None, preset="home"),)
+    prog = await env.store.async_create_program("Preset", (day,) * 7, ())
+    await env.store.async_assign(ROOM, prog.id)
+    await env.hass.async_block_till_done()
+    attrs = env.hass.states.get(SENSOR).attributes
+    assert attrs["today_mode"][1] == 1
+    assert attrs["today_temp"][1] == NO_TEMP
+    assert attrs["slot_temp"] is None
+
+
+async def test_tile_lists_are_parallel_and_use_plain_types(env):
+    cool = (Band(0, 600, "cool", 25.5),)
+    prog = await env.store.async_create_program("Fresco", (cool,) * 7, ())
+    await env.store.async_assign(ROOM, prog.id)
+    await env.hass.async_block_till_done()
+    attrs = env.hass.states.get(SENSOR).attributes
+    assert attrs["today_mode"][0] == 2
+    assert len({len(attrs[k]) for k in TILE_TODAY}) == 1
+    for key in ("today_start", "today_end", "today_mode", "today_auto"):
+        assert all(type(v) is int for v in attrs[key])  # no bool: Tessera drops them
+
+
+async def test_tile_sensor_writes_only_on_change(env):
+    await env.store.async_assign(ROOM, env.program.id)
+    await env.hass.async_block_till_done()
+    events = []
+    env.hass.bus.async_listen(
+        "state_changed",
+        lambda e: events.append(e) if e.data["entity_id"] == SENSOR else None,
+    )
+    await env.go(at(26, 9, 30))
+    await env.go(at(26, 10))
+    assert events == []
+
+
+async def test_unrecorded_tile_attributes():
+    assert {
+        *TILE_TODAY, "slot_mode", "slot_temp", "slot_start_time", "slot_end_time",
+        "next_mode", "next_temp", "next_start_time", "override_until_time",
+    } <= RoomProgramSensor._unrecorded_attributes
