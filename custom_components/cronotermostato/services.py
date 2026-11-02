@@ -35,8 +35,8 @@ from homeassistant.helpers import config_validation as cv, entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from .const import DAY_KINDS, DOMAIN, HOLIDAY_KIND, SIGNAL_ROOM_UPDATED
-from .controller import RoomController
-from .engine.bands_text import BandsTextError, parse_bands
+from .controller import RoomController, temperature_limits
+from .engine.bands_text import BandsTextError, band_problem, parse_bands
 from .engine.models import (
     DAYS_PER_WEEK,
     MODES,
@@ -216,7 +216,7 @@ async def async_set_day(
     program changed.
     """
     try:
-        changed = await _set_day(manager, climate_id, day_kind, bands_text)
+        changed = await _set_day(hass, manager, climate_id, day_kind, bands_text)
     except ServiceValidationError as err:
         if err.translation_key != "room_not_assigned":
             manager.last_errors[climate_id] = str(err.translation_key)
@@ -228,18 +228,35 @@ async def async_set_day(
 
 
 async def _set_day(
+    hass: HomeAssistant,
     manager: Manager, climate_id: str, day_kind: str, bands_text: str
 ) -> bool:
     controller = await _controller(manager, climate_id)
     today_kind = controller.today_kind()
     if day_kind != today_kind:
         raise _error("stale_day", day_kind=day_kind, today_kind=today_kind)
+    store = manager.store
+    program = store.programs[store.assignments[climate_id].program_id]
+    current = program.holiday if day_kind == HOLIDAY_KIND else program.week[
+        DAY_KINDS.index(day_kind)
+    ]
+    if any(band_problem(b) for b in current):
+        # The text cannot carry those bands: saving would silently change them.
+        raise _error("day_locked", day_kind=day_kind)
     try:
         bands = parse_bands(bands_text)
     except BandsTextError as err:
         raise _error("invalid_bands", detail=str(err)) from err
-    store = manager.store
-    program = store.programs[store.assignments[climate_id].program_id]
+    low, high = temperature_limits(hass.states.get(climate_id))
+    for band in bands:
+        if band.temperature is not None and not low <= band.temperature <= high:
+            raise _error(
+                "temperature_out_of_range",
+                min=str(low),
+                max=str(high),
+                temperature=str(band.temperature),
+                entity_id=climate_id,
+            )
     new = tuple(bands)
     if day_kind == HOLIDAY_KIND:
         if program.holiday == new:

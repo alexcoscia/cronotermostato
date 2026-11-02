@@ -95,6 +95,9 @@
     },
     "invalid_bands": {
       "message": "Fasce non valide: {detail}"
+    },
+    "day_locked": {
+      "message": "Le fasce di {day_kind} contengono un'impostazione che non si può scrivere nel testo (per esempio un nome di preset insolito o una temperatura con più di due decimali). Cambia questo giorno nell'editor."
     }
   },
   "entity": {

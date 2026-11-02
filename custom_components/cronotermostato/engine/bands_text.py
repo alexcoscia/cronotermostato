@@ -22,6 +22,7 @@ range of the thermostat is checked when the setting is applied.
 from __future__ import annotations
 
 from collections.abc import Sequence
+import math
 import re
 
 from .models import MINUTES_PER_DAY, MODES, Band, Mode, text_from_minutes
@@ -40,6 +41,8 @@ _HEAD = re.compile(
 _TOKEN = re.compile(r"\S+", _FLAGS)
 _TEMP = re.compile(r"\d{1,3}(?:[.,]\d{1,2})?", _FLAGS)
 _PRESET = re.compile(r"preset=([A-Za-z0-9_-]{1,40})", _FLAGS | re.IGNORECASE)
+_PRESET_NAME = re.compile(r"[A-Za-z0-9_-]{1,40}", _FLAGS)
+_PRESET_KEY = "preset="
 
 
 class BandsTextError(ValueError):
@@ -106,10 +109,21 @@ def _parse_band(segment: str, offset: int, number: int) -> tuple[Band, int]:
             if temperature is not None:
                 raise fail("temperature given twice", col)
             temperature = float(token.replace(",", "."))
-        elif (found := _PRESET.fullmatch(token)) is not None:
+        elif token[: len(_PRESET_KEY)].lower() == _PRESET_KEY:
+            name = token[len(_PRESET_KEY) :]
+            if not name:
+                raise fail("preset name is empty", col)
+            if len(name) > 40:
+                raise fail("preset name too long (at most 40 characters)", col)
+            if _PRESET_NAME.fullmatch(name) is None:
+                raise fail(
+                    "preset name has invalid characters (use letters, digits, "
+                    "_ and -)",
+                    col,
+                )
             if preset is not None:
                 raise fail("preset given twice", col)
-            preset = found[1]
+            preset = name
         else:
             raise fail(
                 f"unexpected {_excerpt(token)!r} (expected a temperature "
@@ -168,14 +182,43 @@ def parse_bands(text: str) -> list[Band]:
     return [band for band, _, _ in ordered]
 
 
+def band_problem(band: Band) -> str | None:
+    """Why a band cannot be written safely in the compact text, or ``None``.
+
+    Not writable: a preset outside ``[A-Za-z0-9_-]{1,40}``, a temperature that
+    is not finite, negative, 1000 or more, or that has more than two decimals.
+    """
+    if band.preset is not None and not (
+        isinstance(band.preset, str) and _PRESET_NAME.fullmatch(band.preset)
+    ):
+        return "the preset name cannot be written in the text"
+    t = band.temperature
+    if t is not None:
+        if (
+            isinstance(t, bool)
+            or not isinstance(t, (int, float))
+            or not math.isfinite(t)
+            or not 0 <= t < 1000
+            or round(t, 2) != t
+        ):
+            return "the temperature cannot be written in the text"
+    return None
+
+
 def bands_to_text(bands: Sequence[Band]) -> str:
-    """The compact text of some bands (the inverse of ``parse_bands``)."""
+    """The compact text of some bands (the inverse of ``parse_bands``).
+
+    Raises ``BandsTextError`` if a band cannot be written without losing
+    information; the text produced is always read back as the same bands.
+    """
     parts = []
-    for b in bands:
+    for number, b in enumerate(bands, 1):
+        if (problem := band_problem(b)) is not None:
+            raise BandsTextError(problem, number, 1)
         mode: Mode = b.mode
         item = f"{text_from_minutes(b.start)}-{text_from_minutes(b.end)} {mode}"
         if b.temperature is not None:
-            item += f" {b.temperature:g}"
+            item += " " + f"{b.temperature:.2f}".rstrip("0").rstrip(".")
         if b.preset is not None:
             item += f" preset={b.preset}"
         parts.append(item)

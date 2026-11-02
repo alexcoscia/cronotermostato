@@ -95,6 +95,9 @@
     },
     "invalid_bands": {
       "message": "Invalid bands: {detail}"
+    },
+    "day_locked": {
+      "message": "The bands of {day_kind} contain a setting that cannot be written in the text (for example an unusual preset name or a temperature with more than two decimals). Change this day in the editor."
     }
   },
   "entity": {

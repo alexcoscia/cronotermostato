@@ -344,3 +344,162 @@ async def test_no_state_write_when_nothing_changes(env):
     with pytest.raises(ServiceValidationError):
         await env.set_day("tue", "")
     assert len(events) == 1  # same error again: no new write
+
+
+# -- review fixes ------------------------------------------------------
+
+
+async def _exotic(env):
+    """A shared program with preset, locked and automatic bands on Monday."""
+    week = (
+        (
+            Band(60, 120, "heat", None, preset="eco"),
+            Band(120, 180, "heat", 20.0, preset="Fuori casa"),
+            Band(180, 240, "heat", 20.125),
+            Band(240, 300, "off"),
+        ),
+    ) + (DAY,) * 6
+    await env.store.async_update_program(env.program.id, week=week)
+    await env.hass.async_block_till_done()
+
+
+async def test_today_preset_and_locked(env):
+    await _exotic(env)
+    attrs = env.attrs()
+    assert attrs["today_start"] == [0, 60, 120, 180, 240, 300]
+    assert attrs["today_auto"] == [1, 0, 0, 0, 0, 1]
+    assert attrs["today_preset"] == ["", "eco", "Fuori casa", "", "", ""]
+    assert attrs["today_locked"] == [0, 0, 1, 1, 0, 0]
+    assert len(attrs["today_preset"]) == len(attrs["today_locked"]) == 6
+    assert {"today_preset", "today_locked"} <= RoomProgramSensor._unrecorded_attributes
+
+
+async def test_today_preset_plain_day(env):
+    attrs = env.attrs()
+    assert attrs["today_preset"] == [""] * 5
+    assert attrs["today_locked"] == [0] * 5
+
+
+async def test_today_preset_empty_without_bands(env):
+    await env.store.async_set_paused(ROOM, True)
+    await env.hass.async_block_till_done()
+    assert env.attrs()["today_preset"] == []
+    assert env.attrs()["today_locked"] == []
+
+
+async def test_set_day_refuses_a_day_with_locked_bands(env):
+    await _exotic(env)
+    before = env.program_now()
+    with pytest.raises(ServiceValidationError) as err:
+        await env.set_day("mon", "08:00-09:00 off")
+    assert err.value.translation_key == "day_locked"
+    assert env.program_now() is before
+    assert env.attrs()["last_error"] == "day_locked"
+    # presets that can be written are kept by a round trip through the text
+    await env.store.async_update_program(
+        env.program.id, week=((Band(60, 120, "heat", None, preset="eco"),),) + (DAY,) * 6
+    )
+    await env.set_day("mon", "01:00-02:00 heat preset=eco; 03:00-04:00 off")
+    assert env.program_now().week[0][0].preset == "eco"
+
+
+async def test_temperature_limits_checked_before_saving(env):
+    env.hass.states.async_set(
+        ROOM, "heat", {"min_temp": 10, "max_temp": 25, "hvac_modes": ["heat", "off"]}
+    )
+    before = env.program_now()
+    for text, bad in (("08:00-09:00 heat 9.9", "9.9"), ("08:00-09:00 heat 25.1", "25.1")):
+        with pytest.raises(ServiceValidationError) as err:
+            await env.set_day("mon", text)
+        assert err.value.translation_key == "temperature_out_of_range"
+        ph = err.value.translation_placeholders
+        assert ph["temperature"] == bad and ph["entity_id"] == ROOM
+        assert ph["min"] == "10.0" and ph["max"] == "25.0"
+        assert env.program_now() is before
+        assert env.attrs()["last_error"] == "temperature_out_of_range"
+    # a second band out of range refuses the whole day
+    with pytest.raises(ServiceValidationError):
+        await env.set_day("mon", "08:00-09:00 heat 20; 10:00-11:00 cool 30")
+    assert env.program_now() is before
+    # exact limits are fine, and so are preset-only and off bands
+    await env.set_day("mon", "00:00-01:00 heat 10; 01:00-02:00 cool 25; 02:00-03:00 heat preset=eco; 03:00-04:00 off")
+    assert [b.temperature for b in env.program_now().week[0]] == [10.0, 25.0, None, None]
+    assert env.attrs()["last_error"] is None
+
+
+async def test_temperature_default_limits_without_state(env):
+    env.hass.states.async_remove(ROOM)
+    for text in ("00:00-01:00 heat 4.9", "00:00-01:00 heat 35.1"):
+        with pytest.raises(ServiceValidationError) as err:
+            await env.set_day("mon", text)
+        assert err.value.translation_key == "temperature_out_of_range"
+    await env.set_day("mon", "00:00-01:00 heat 5; 01:00-02:00 heat 35")
+    assert len(env.program_now().week[0]) == 2
+
+
+async def test_limits_of_the_requested_room_only(env):
+    await env.store.async_assign(ROOM2, env.program.id)
+    env.hass.states.async_set(ROOM2, "heat", {"min_temp": 5, "max_temp": 22})
+    await env.set_day("mon", "00:00-01:00 heat 30", room=ROOM)  # ROOM allows 35
+    with pytest.raises(ServiceValidationError):
+        await env.set_day("mon", "00:00-01:00 heat 31", room=ROOM2)
+
+
+async def test_last_error_cleared_at_midnight(env):
+    with pytest.raises(ServiceValidationError):
+        await env.set_day("tue", "")
+    assert env.attrs()["last_error"] == "stale_day"
+    await env.go(datetime(2026, 10, 27, 0, 0, 1, tzinfo=TZ))
+    assert env.attrs()["last_error"] is None
+    assert env.entry.runtime_data.manager.last_errors == {}
+
+
+async def test_last_error_cleared_by_reload(env):
+    with pytest.raises(ServiceValidationError):
+        await env.set_day("tue", "")
+    await env.hass.config_entries.async_reload(env.entry.entry_id)
+    await env.hass.async_block_till_done()
+    assert env.attrs()["last_error"] is None
+
+
+async def test_manager_stop_clears_errors(env):
+    manager = env.entry.runtime_data.manager
+    with pytest.raises(ServiceValidationError):
+        await env.set_day("tue", "")
+    assert manager.last_errors
+    await manager.async_stop()
+    assert manager.last_errors == {}
+
+
+async def test_unchanged_holiday_does_not_save(env):
+    await env.go(at(1, 9, month=11))
+    saved = []
+    env.store._store.async_save = lambda data: saved.append(data) or _done()
+    await env.set_day("holiday", "0:00 - 24:00 heat 18")
+    assert saved == []
+    assert env.program_now().holiday == HOLIDAY
+
+
+async def test_holiday_keeps_the_name(env):
+    await env.go(at(1, 9, month=11))
+    await env.set_day("holiday", "08:00-09:00 heat 19")
+    assert env.program_now().name == "Casa"
+
+
+@pytest.mark.parametrize(
+    "when",
+    [
+        datetime(2026, 3, 29, 0, 30, tzinfo=ZoneInfo("UTC")),  # 01:30 CET
+        datetime(2026, 3, 29, 1, 30, tzinfo=ZoneInfo("UTC")),  # 03:30 CEST (02:30 skipped)
+        datetime(2026, 10, 25, 0, 30, tzinfo=ZoneInfo("UTC")),  # 02:30 CEST
+        datetime(2026, 10, 25, 1, 30, tzinfo=ZoneInfo("UTC")),  # 02:30 CET (repeated)
+    ],
+)
+async def test_set_day_across_dst_changes(env, when):
+    env.freezer.move_to(when)
+    controller = env.entry.runtime_data.manager.controllers[ROOM]
+    assert controller.today_kind() == "sun"
+    with pytest.raises(ServiceValidationError):
+        await env.set_day("sat", "")
+    await env.set_day("sun", "02:00-03:00 off")
+    assert env.program_now().week[6] == (Band(120, 180, "off"),)

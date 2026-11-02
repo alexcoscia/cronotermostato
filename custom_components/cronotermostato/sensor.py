@@ -14,6 +14,7 @@ from homeassistant.util import dt as dt_util
 
 from . import CronoConfigEntry, CronoData
 from .const import SIGNAL_ROOMS_CHANGED
+from .engine.bands_text import band_problem
 from .engine.day import program_views
 from .engine.models import Mode, Program
 from .engine.timeline import Slot
@@ -68,7 +69,10 @@ TILE_ATTRIBUTES = frozenset(
 )
 
 EDIT_ATTRIBUTES = frozenset(
-    {"program_name", "program_rooms", "today_kind", "last_error"}
+    {
+        "program_name", "program_rooms", "today_kind", "last_error",
+        "today_preset", "today_locked",
+    }
 )
 """Flat attributes for editing today's bands from a display: the shared
 program, how many rooms use it, which day is edited (``mon`` .. ``sun`` or
@@ -114,6 +118,8 @@ class RoomProgramSensor(RoomEntity, SensorEntity):
 
     @callback
     def _midnight(self, _now: datetime) -> None:
+        # A refused attempt of yesterday says nothing about the new day.
+        self._data.manager.last_errors.pop(self._climate_id, None)
         self.async_write_ha_state()
 
     def _today(self) -> dict[str, list[Any]]:
@@ -131,6 +137,10 @@ class RoomProgramSensor(RoomEntity, SensorEntity):
                 for b in bands
             ],
             "today_auto": [int(b.auto) for b in bands],
+            "today_preset": [b.preset or "" for b in bands],
+            "today_locked": [
+                int(not b.auto and band_problem(b) is not None) for b in bands
+            ],
         }
 
     @property

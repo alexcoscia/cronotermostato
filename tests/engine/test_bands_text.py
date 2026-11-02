@@ -6,6 +6,7 @@ from custom_components.cronotermostato.engine.bands_text import (
     MAX_BANDS,
     MAX_LENGTH,
     BandsTextError,
+    band_problem,
     bands_to_text,
     parse_bands,
 )
@@ -114,6 +115,9 @@ def err_of(text):
         "07:00-22:00 off 20",
         "07:00-22:00 off preset=eco",
         "07:00-22:00 heat preset=",
+        "07:00-08:00off",
+        "07:00-08:00 heat 1234",
+        "07:00-08:00 heat 1234.5",
         "07:00-22:00 heat preset=a b",
         "07:00-22:00 heat preset=" + "x" * 41,
         "25:00-26:00 heat 20",
@@ -190,3 +194,57 @@ def test_roundtrip_to_text():
     assert bands_to_text(with_preset) == "08:00-09:00 heat 21 preset=eco"
     assert parse_bands(bands_to_text(with_preset)) == with_preset
     assert bands_to_text([]) == ""
+
+
+def test_length_boundary_1024_1025():
+    ok = "07:00-08:00 off" + " " * (MAX_LENGTH - len("07:00-08:00 off"))
+    assert len(ok) == MAX_LENGTH
+    assert parse_bands(ok) == [Band(420, 480, "off")]
+    assert "too long" in str(err_of(ok + " "))
+
+
+def test_preset_messages_are_specific():
+    assert "too long" in str(err_of("07:00-08:00 heat preset=" + "x" * 41))
+    assert "invalid characters" in str(err_of("07:00-08:00 heat preset=Fuori!"))
+    assert "invalid characters" in str(err_of("07:00-08:00 heat preset=caff\u00e8"))
+    assert "empty" in str(err_of("07:00-08:00 heat preset="))
+    assert "invalid characters" in str(err_of("07:00-08:00 heat PRESET=a=b"))
+    assert parse_bands("07:00-08:00 heat PRESET=Eco")[0].preset == "Eco"
+    assert parse_bands("07:00-08:00 heat preset=" + "x" * 40)[0].preset == "x" * 40
+
+
+@pytest.mark.parametrize(
+    "band",
+    [
+        Band(0, 60, "heat", 20.0, preset="Fuori casa"),
+        Band(0, 60, "heat", None, preset="caff\u00e8"),
+        Band(0, 60, "heat", None, preset="a=b"),
+        Band(0, 60, "heat", None, preset="x" * 41),
+        Band(0, 60, "heat", 20.125),
+        Band(0, 60, "heat", -5.0),
+        Band(0, 60, "heat", 1234.5),
+        Band(0, 60, "heat", 1000.0),
+        Band(0, 60, "heat", 19.9999999),
+        Band(0, 60, "heat", float("nan")),
+    ],
+)
+def test_bands_to_text_refuses_what_it_cannot_express(band):
+    assert band_problem(band)
+    with pytest.raises(BandsTextError) as err:
+        bands_to_text([Band(0, 30, "off"), band])
+    assert err.value.band == 2
+
+
+@pytest.mark.parametrize(
+    "temperature", [0.0, 5.0, 20.0, 20.1, 20.25, 19.99, 999.99, 21.5]
+)
+def test_bands_to_text_roundtrips_expressible(temperature):
+    bands = [Band(0, 60, "heat", temperature, preset="Eco_2-x")]
+    assert band_problem(bands[0]) is None
+    assert parse_bands(bands_to_text(bands)) == bands
+
+
+def test_bands_to_text_exact_format():
+    assert bands_to_text([Band(0, 60, "heat", 20.0)]) == "00:00-01:00 heat 20"
+    assert bands_to_text([Band(0, 60, "heat", 20.5)]) == "00:00-01:00 heat 20.5"
+    assert bands_to_text([Band(0, 60, "heat", 100.25)]) == "00:00-01:00 heat 100.25"

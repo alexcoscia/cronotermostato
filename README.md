@@ -87,7 +87,8 @@ Colours come from the Home Assistant theme.
   purpose: they are what a wall tile or a family member needs.
 - **The `cronotermostato.*` services are not restricted**: every authenticated user can call
   `create_program`, `update_program`, `delete_program`, `assign`, `unassign` and `set_day` (for example from
-  Developer tools), whatever `admin_only` says. `admin_only` is not a security boundary.
+  Developer tools), whatever `admin_only` says. This now includes `set_day`, which changes the
+  **shared** program of a room (and so every room that uses it). `admin_only` is not a security boundary.
 - Hiding the sidebar entry is only visibility: an administrator can change it in the Home Assistant
   UI, and opening `/cronotermostato` by hand as a non-administrator has not been checked yet.
 - The static files of the editor are served without authentication (like all Home Assistant
@@ -278,8 +279,21 @@ left unchanged. Like the other services, it is open to every authenticated user.
 - Only your bands are written: the automatic `off` bands are recalculated and cannot be written.
 - If the resulting day is the same as the stored one, nothing is saved and nothing is re-applied.
   Otherwise rooms using the program apply the new setting at once, like `update_program`.
-- A temperature outside the limits of a thermostat is not refused here: the room shows
-  `out_of_range` when it is applied (see Known limits).
+- The temperatures are checked **before** saving against the limits of the room in the call (the
+  same as `set_manual`: its `min_temp`/`max_temp`, else 5-35): a band outside them fails with
+  `temperature_out_of_range` and nothing is written. The program is shared, so another room that
+  uses it, with narrower limits, may still show `out_of_range` when it applies the band.
+- **Last writer wins**: there is no revision check, also between the Home Assistant editor and a
+  display. If both change the same day, the later save silently overwrites the earlier one.
+- A day that cannot be written in this text is **never changed by `set_day`**: if the stored bands of
+  that day have a preset outside `[A-Za-z0-9_-]` (or longer than 40 characters) or a temperature
+  with more than two decimals (or negative, or 1000 and over), the call fails with `day_locked`;
+  change that day in the editor. A day with more than 24 user bands can be read from the sensor
+  but `set_day` refuses to write more than 24 (it never truncates).
+- `bands_to_text` in `engine/bands_text.py` (the inverse of the parser, used by tests and tools)
+  raises `BandsTextError` for a band it cannot express (for example the preset `Fuori casa`, an
+  accented preset, a temperature of `20.125`, `-5` or `1234.5`) instead of writing a text that
+  would be read back differently.
 
 ```yaml
 action: cronotermostato.set_day
@@ -289,7 +303,7 @@ data:
   bands: "07:00-09:00 heat 21; 18:00-22:30 heat 20,5; 22:30-24:00 heat preset=eco"
 ```
 
-Errors: `stale_day` (the day is not today's), `invalid_bands` (with the band number and the
+Errors: `stale_day` (the day is not today's), `day_locked`, `temperature_out_of_range`, `invalid_bands` (with the band number and the
 column of the problem, for example `band 2, column 34: unknown mode 'warm' (use heat, cool or
 off)`), `room_not_assigned`. The room sensor also keeps the code of the last refused attempt in
 `last_error`.
@@ -329,7 +343,14 @@ For each assigned room (one device per room; entity ids use the room name, in It
     `set_day` of this room that was refused: `stale_day`, `invalid_bands` or `invalid_program`;
     `null` after a successful attempt or when there is none; kept in memory only, so a restart
     clears it). Example: `program_name: Casa`, `program_rooms: 3`, `today_kind: mon`,
-    `last_error: null`. Like the other flat attributes they are not recorded in the history.
+    `last_error: null`. `last_error` is also cleared at midnight and at every restart/reload.
+    Like the other flat attributes they are not recorded in the history.
+  - `today_preset` and `today_locked`: parallel to `today_*` (one entry per band, automatic
+    bands included). `today_preset` is the preset name of the band, `""` if none (always `""` for
+    automatic bands). `today_locked` is `1` when a display must **not** edit the band because it
+    cannot be written safely in the `set_day` text (preset outside `[A-Za-z0-9_-]{1,40}`,
+    temperature with more than two decimals, negative or 1000 and over), else `0`. A day with a
+    locked band is refused by `set_day` (`day_locked`).
 - `switch.<room>_automatico`: on while the room follows its program. Turning it off
   forces the current slot's setting until the slot ends; turning it on goes back to
   the program.
