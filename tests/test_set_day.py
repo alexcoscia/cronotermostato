@@ -341,9 +341,11 @@ async def test_no_state_write_when_nothing_changes(env):
     assert events == []
     with pytest.raises(ServiceValidationError):
         await env.set_day("tue", "")
+    await env.hass.async_block_till_done()
     assert len(events) == 1  # last_error and edit_seq changed
     with pytest.raises(ServiceValidationError):
         await env.set_day("tue", "")
+    await env.hass.async_block_till_done()
     # same error again: since 0.3.2 edit_seq changes, so the display sees it
     assert len(events) == 2
 
