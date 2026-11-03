@@ -48,6 +48,23 @@ export class CronoBandRow extends LitElement {
         border-radius: 10px;
         overflow: hidden;
       }
+      /* The fills of the modes are full colours now: the row keeps the card surface (so fields, hints and
+         errors sit on it) and says the mode with its border and the chip beside it, same colours as its segment. */
+      .row.b-heat,
+      .row.b-cool,
+      .row.b-off {
+        background-color: var(--crono-surface);
+        color: var(--crono-text);
+      }
+      .row.b-heat {
+        border-color: var(--crono-heat-line);
+      }
+      .row.b-cool {
+        border-color: var(--crono-cool-line);
+      }
+      .row.b-off {
+        border-color: var(--crono-off-line);
+      }
       :host([selected]) .row {
         box-shadow: 0 0 0 3px var(--crono-focus);
       }

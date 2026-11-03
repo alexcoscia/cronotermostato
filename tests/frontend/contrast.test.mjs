@@ -168,13 +168,10 @@ function textPairs(p) {
     ["text", "warn-bg"],
     ["error-bg", "error"], // icon in the red badge of a day tab
   ];
-  for (const m of MODES) {
-    pairs.push([m, `${m}-bg`]); // text drawn in the colour of the mode (bar segments)
-    pairs.push(["text", `${m}-bg`]); // fields, hints and labels of a band row
-    pairs.push(["error", `${m}-bg`]); // error line inside a row
-    pairs.push(["warn", `${m}-bg`]); // warning line inside a row
-    pairs.push([m, "surface"]); // placeholder titles and tags on a card
-  }
+  // The fills of the modes are saturated (not washes): the only text drawn on them is the colour of the
+  // mode itself (bar segments, chips of the card), checked here; error / warn / ordinary text never
+  // sits on a mode fill (the rows have the surface as background).
+  for (const m of MODES) pairs.push([m, `${m}-bg`]);
   return pairs;
 }
 
@@ -209,14 +206,11 @@ for (const name of SITUATIONS) {
   });
 }
 
-// The tint of a mode against the surface it sits on is, by design, a light wash (1.1-1.4:1):
-// the mode is NOT said by that wash alone. Every element that uses it also has the icon of the
-// mode, its name in text, the temperature, and the border of the mode colour (checked above at 3:1).
-// The same goes for "calculated": a dashed border, the word "calcolata" / "calculated", the
-// stripes on the side or at the foot of the element (checked above as mode colour on its tint).
-test("the tints of the modes are redundant with icon and text (documented, not a contrast target)", () => {
-  const p = palette("ha-light");
-  for (const m of MODES) assert.ok(contrast(p[`${m}-bg`], p.surface2) < 3, `${m}-bg is a wash by design`);
+// The fill of a mode is a full colour, but the mode is still NOT said by colour alone: every element
+// that uses it also has the icon of the mode, its name in text, the temperature, and the border of
+// the mode colour (checked above at 3:1). The same goes for "calculated": a dashed border, the word
+// "calcolata" / "calculated", the stripes on the side or at the foot of the element.
+test("the fills of the modes are redundant with icon and text", () => {
   const day = readFileSync(new URL("../../custom_components/cronotermostato/frontend/components/crono-day.js", import.meta.url), "utf8");
   const row = readFileSync(new URL("../../custom_components/cronotermostato/frontend/components/crono-band-row.js", import.meta.url), "utf8");
   assert.match(row, /iconMode\(band\.mode\)/); // icon of the mode in the row
@@ -229,8 +223,8 @@ test("the tints of the modes are redundant with icon and text (documented, not a
 // (variant 0 = the plain colour of the mode, 1..3 = --crono-<mode>-v<n>-bg / -v<n> / -v<n>-line). The
 // variants must (a) keep text at 4.5:1 and the border at 3:1 against the surface, (b) differ from each
 // other by a clearly visible CIEDE2000 (>= 15), and (c) never be mistaken for another mode: the fills
-// of different modes are >= 15 apart too, and hot stays in red-yellow-olive hues, cool in cyan-blue-violet,
-// off is grey (low chroma).
+// of different modes are >= 15 apart too (no ΔE 7 exception any more); heat is amber / orange / red / purple, cool
+// is azure / deep blue / sky blue / aqua, off is grey (low chroma); every fill stands out from the surface (dE >= 9).
 const DAY_SRC = readFileSync(new URL("../../custom_components/cronotermostato/frontend/components/crono-day.js", import.meta.url), "utf8");
 const WEEK_SRC = readFileSync(new URL("../../custom_components/cronotermostato/frontend/components/crono-week-tabs.js", import.meta.url), "utf8");
 const ROW_SRC = readFileSync(new URL("../../custom_components/cronotermostato/frontend/components/crono-band-row.js", import.meta.url), "utf8");
@@ -320,20 +314,26 @@ for (const name of SITUATIONS) {
         }
       }
     }
-    // different modes: families by hue / chroma, and never closer than a variant is to its siblings
+    // families by hue (CIELAB hue angle) / chroma, each variant in its own colour name
+    const FAMILY = {
+      heat: [[55, 95, "amber"], [40, 65, "orange"], [20, 45, "red"], [300, 340, "purple"]],
+      cool: [[255, 290, "azure"], [285, 305, "deep blue"], [215, 245, "sky blue"], [175, 205, "aqua"]],
+    };
     for (const x of all) {
-      const [, a, b] = x.lab;
       const h = hueOf(x.lab);
-      if (x.m === "heat") assert.ok(h >= 0 && h <= 130 || h >= 340, `${name}: heat v${x.i} hue ${h.toFixed(0)} is not warm`);
-      if (x.m === "cool") assert.ok(h >= 180 && h <= 320, `${name}: cool v${x.i} hue ${h.toFixed(0)} is not cool`);
       if (x.m === "off") assert.ok(chromaOf(x.lab) < 12, `${name}: off v${x.i} is not grey (chroma ${chromaOf(x.lab).toFixed(1)})`);
-      else assert.ok(chromaOf(x.lab) >= 8, `${name}: ${x.m} v${x.i} is too grey (${chromaOf(x.lab).toFixed(1)}), it would pass for "off" (${a.toFixed(0)},${b.toFixed(0)})`);
+      else {
+        const [lo, hi, label] = FAMILY[x.m][x.i];
+        assert.ok(h >= lo && h <= hi, `${name}: ${x.m} v${x.i} should be ${label} (hue ${lo}-${hi}), is ${h.toFixed(0)}`);
+        assert.ok(chromaOf(x.lab) >= 15, `${name}: ${x.m} v${x.i} is too grey (${chromaOf(x.lab).toFixed(1)}), it would pass for "off"`);
+      }
+      // a full fill, not a wash: it stands out from the surface it sits on
+      for (const s of ["surface", "surface2"]) assert.ok(deltaE2000(x.lab, toLab(p[s])) >= 9, `${name}: ${x.m} v${x.i} is too close to ${s} (dE ${deltaE2000(x.lab, toLab(p[s])).toFixed(1)})`);
     }
     for (const x of all) for (const y of all) {
-      if (x.m === y.m) continue;
+      if (x === y) continue;
       const d = deltaE2000(x.lab, y.lab);
-      // the plain colours (v0) are the pale washes the modes always had, 7 apart is what they have
-      assert.ok(d >= (x.i === 0 && y.i === 0 ? 7 : 12), `${name}: ${x.m} v${x.i} and ${y.m} v${y.i} are only dE ${d.toFixed(1)} apart`);
+      assert.ok(d >= 15, `${name}: ${x.m} v${x.i} and ${y.m} v${y.i} are only dE ${d.toFixed(1)} apart`);
     }
   });
 }

@@ -274,18 +274,21 @@ export const TINT_COUNT = 4;
  *
  * Palette for a Tessera plugin (or any other client) to reproduce: the index returned here (0..3) picks, for
  * the mode of the band, the colours below, written as fill/text/border in sRGB hex. Index 0 is the plain
- * colour of the mode; 1..3 differ in HUE, not only in lightness (CIEDE2000 between any two fills of a
- * mode is >= 15, checked by tests/frontend/contrast.test.mjs, text 4.5:1, border 3:1). Heat: amber, brick
- * red, gold, olive; cool: pale blue, cyan, violet, azure; off: four greys. The source of truth is
- * styles.js (--crono-<mode>-v<n>-bg / -v<n> / -v<n>-line; v0 is --crono-<mode>-bg / <mode> / -line).
+ * colour of the mode; every variant is a full, saturated fill (not a pale wash) and the four differ in
+ * HUE: CIEDE2000 between any two fills of the palette (also of different modes) is >= 15, text on the
+ * fill 4.5:1, border on the card 3:1 (all checked by tests/frontend/contrast.test.mjs).
+ * Heat: v0 amber, v1 orange, v2 red, v3 purple. Cool: v0 azure, v1 deep blue, v2 sky blue (celeste),
+ * v3 aqua (teal). Off: four greys, from light to dark in the light theme (the reverse of the dark one).
+ * The source of truth is styles.js (--crono-<mode>-v<n>-bg / -v<n> / -v<n>-line; v0 is
+ * --crono-<mode>-bg / <mode> / -line). The colour never says the mode alone: icon, name and value stay.
  * Light theme:
- *   heat: v0 #fde8bd/#7a4300/#9f6200; v1 #f08b74/#4f1204/#b3432a; v2 #ecd22e/#403600/#8f7a00; v3 #a3bf55/#1f2c02/#5f7a1c
- *   cool: v0 #d8e6fd/#1b4a9e/#2f64c0; v1 #6fd9ea/#033b45/#0c8399; v2 #c3a3f0/#2e1070/#7a4fc0; v3 #6fa9f0/#06234f/#2f6fc4
- *   off: v0 #e3e6ea/#464e5b/#757f8e; v1 #a4aab6/#14181d/#5f6672; v2 #747c8b/#05070a/#3f4652; v3 #38404c/#ffffff/#1c2229
+ *   heat: v0 #ffb300/#3a2400/#8a5a00; v1 #ff7a1a/#3a1400/#a84300; v2 #d62828/#ffffff/#a31d1d; v3 #8e24aa/#ffffff/#7b1f94
+ *   cool: v0 #4a9eff/#021f3d/#1d6bc7; v1 #1e3fae/#ffffff/#1e3fae; v2 #8fe0fa/#06303f/#2f7f9c; v3 #12b3ad/#00302e/#0b7a74
+ *   off: v0 #bcc2cb/#20252c/#6f7a88; v1 #7d8593/#0b0e12/#555d6a; v2 #4f5766/#ffffff/#343b46; v3 #1e232c/#ffffff/#161a20
  * Dark theme:
- *   heat: v0 #4a3410/#fcd38a/#b9791a; v1 #7f2e1a/#ffd9cd/#d9674a; v2 #7a6a00/#fff6b0/#bfa200; v3 #3c5c1c/#dff0b5/#7aa83c
- *   cool: v0 #14305e/#b3cdff/#5b88d8; v1 #0a5c70/#c0f3fc/#2fa5c0; v2 #6b4fd6/#ffffff/#9a85f0; v3 #2a6fc0/#ffffff/#6aa6f0
- *   off: v0 #2b3038/#c4cbd5/#8791a0; v1 #575e6b/#ffffff/#8a94a3; v2 #7f8999/#05070a/#b0b9c6; v3 #b4bdc9/#0b0e12/#d0d7e0
+ *   heat: v0 #e69a00/#1f1300/#ffc233; v1 #f26a1b/#200a00/#ff9a5c; v2 #c62828/#ffffff/#ff6b6b; v3 #a23cc0/#ffffff/#d38be6
+ *   cool: v0 #4a9eff/#021f3d/#8cc4ff; v1 #2347c8/#ffffff/#8aa0ff; v2 #9be3fb/#06303f/#9be3fb; v3 #14b8b0/#00302e/#4fe0d6
+ *   off: v0 #485060/#ffffff/#8791a0; v1 #76808f/#05070a/#a3acba; v2 #abb2bf/#05070a/#d0d6df; v3 #f1f3f6/#05070a/#ffffff
  */
 export function bandTints(bands) {
   const seen = new Map(); // mode -> [value keys in order of appearance]
