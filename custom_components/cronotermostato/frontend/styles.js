@@ -33,6 +33,33 @@ export const tokens = css`
     --crono-off: #464e5b;
     --crono-off-bg: #e3e6ea;
     --crono-off-line: #757f8e;
+    --crono-heat-v1-bg: #f08b74;
+    --crono-heat-v1: #4f1204;
+    --crono-heat-v1-line: #b3432a;
+    --crono-heat-v2-bg: #ecd22e;
+    --crono-heat-v2: #403600;
+    --crono-heat-v2-line: #8f7a00;
+    --crono-heat-v3-bg: #a3bf55;
+    --crono-heat-v3: #1f2c02;
+    --crono-heat-v3-line: #5f7a1c;
+    --crono-cool-v1-bg: #6fd9ea;
+    --crono-cool-v1: #033b45;
+    --crono-cool-v1-line: #0c8399;
+    --crono-cool-v2-bg: #c3a3f0;
+    --crono-cool-v2: #2e1070;
+    --crono-cool-v2-line: #7a4fc0;
+    --crono-cool-v3-bg: #6fa9f0;
+    --crono-cool-v3: #06234f;
+    --crono-cool-v3-line: #2f6fc4;
+    --crono-off-v1-bg: #a4aab6;
+    --crono-off-v1: #14181d;
+    --crono-off-v1-line: #5f6672;
+    --crono-off-v2-bg: #747c8b;
+    --crono-off-v2: #05070a;
+    --crono-off-v2-line: #3f4652;
+    --crono-off-v3-bg: #38404c;
+    --crono-off-v3: #ffffff;
+    --crono-off-v3-line: #1c2229;
     --crono-ok: #0f6636;
     --crono-ok-bg: #d6f1e0;
     --crono-field-line: #6f7a88;
@@ -53,6 +80,33 @@ export const tokens = css`
     --crono-off: #c4cbd5;
     --crono-off-bg: #2b3038;
     --crono-off-line: #8791a0;
+    --crono-heat-v1-bg: #7f2e1a;
+    --crono-heat-v1: #ffd9cd;
+    --crono-heat-v1-line: #d9674a;
+    --crono-heat-v2-bg: #7a6a00;
+    --crono-heat-v2: #fff6b0;
+    --crono-heat-v2-line: #bfa200;
+    --crono-heat-v3-bg: #3c5c1c;
+    --crono-heat-v3: #dff0b5;
+    --crono-heat-v3-line: #7aa83c;
+    --crono-cool-v1-bg: #0a5c70;
+    --crono-cool-v1: #c0f3fc;
+    --crono-cool-v1-line: #2fa5c0;
+    --crono-cool-v2-bg: #6b4fd6;
+    --crono-cool-v2: #ffffff;
+    --crono-cool-v2-line: #9a85f0;
+    --crono-cool-v3-bg: #2a6fc0;
+    --crono-cool-v3: #ffffff;
+    --crono-cool-v3-line: #6aa6f0;
+    --crono-off-v1-bg: #575e6b;
+    --crono-off-v1: #ffffff;
+    --crono-off-v1-line: #8a94a3;
+    --crono-off-v2-bg: #7f8999;
+    --crono-off-v2: #05070a;
+    --crono-off-v2-line: #b0b9c6;
+    --crono-off-v3-bg: #b4bdc9;
+    --crono-off-v3: #0b0e12;
+    --crono-off-v3-line: #d0d7e0;
     --crono-ok: #8be0ae;
     --crono-ok-bg: #123a24;
     --crono-field-line: #8b94a1;
@@ -209,6 +263,51 @@ export const modeColors = css`
     background-color: var(--crono-off-bg);
     color: var(--crono-off);
     border-color: var(--crono-off-line);
+  }
+  .b-heat.v1 {
+    background-color: var(--crono-heat-v1-bg);
+    color: var(--crono-heat-v1);
+    border-color: var(--crono-heat-v1-line);
+  }
+  .b-heat.v2 {
+    background-color: var(--crono-heat-v2-bg);
+    color: var(--crono-heat-v2);
+    border-color: var(--crono-heat-v2-line);
+  }
+  .b-heat.v3 {
+    background-color: var(--crono-heat-v3-bg);
+    color: var(--crono-heat-v3);
+    border-color: var(--crono-heat-v3-line);
+  }
+  .b-cool.v1 {
+    background-color: var(--crono-cool-v1-bg);
+    color: var(--crono-cool-v1);
+    border-color: var(--crono-cool-v1-line);
+  }
+  .b-cool.v2 {
+    background-color: var(--crono-cool-v2-bg);
+    color: var(--crono-cool-v2);
+    border-color: var(--crono-cool-v2-line);
+  }
+  .b-cool.v3 {
+    background-color: var(--crono-cool-v3-bg);
+    color: var(--crono-cool-v3);
+    border-color: var(--crono-cool-v3-line);
+  }
+  .b-off.v1 {
+    background-color: var(--crono-off-v1-bg);
+    color: var(--crono-off-v1);
+    border-color: var(--crono-off-v1-line);
+  }
+  .b-off.v2 {
+    background-color: var(--crono-off-v2-bg);
+    color: var(--crono-off-v2);
+    border-color: var(--crono-off-v2-line);
+  }
+  .b-off.v3 {
+    background-color: var(--crono-off-v3-bg);
+    color: var(--crono-off-v3);
+    border-color: var(--crono-off-v3-line);
   }
   .is-auto {
     border-style: dashed;

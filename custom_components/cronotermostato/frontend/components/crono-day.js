@@ -94,35 +94,9 @@ export class CronoDay extends LitElement {
         background: var(--crono-surface2);
         border: 1px solid var(--crono-line);
       }
-      /* Same mode, different value (temperature or preset): the plain colour of the mode is mixed with
-         its text colour by a growing share (contrast.test.mjs checks text on every tint). The label of
-         the band says the value in words, so the tint is never the only cue. */
-      .b-heat {
-        --m-bg: var(--crono-heat-bg);
-        --m-fg: var(--crono-heat);
-      }
-      .b-cool {
-        --m-bg: var(--crono-cool-bg);
-        --m-fg: var(--crono-cool);
-      }
-      .b-off {
-        --m-bg: var(--crono-off-bg);
-        --m-fg: var(--crono-off);
-      }
-      .seg.v1,
-      .seg.v2,
-      .seg.v3 {
-        background-color: color-mix(in srgb, var(--m-bg) calc(100% - var(--tint)), var(--m-fg) var(--tint));
-      }
-      .seg.v1 {
-        --tint: 8%;
-      }
-      .seg.v2 {
-        --tint: 15%;
-      }
-      .seg.v3 {
-        --tint: 22%;
-      }
+      /* Same mode, different value (temperature or preset): the classes v1..v3 of styles.js (modeColors) give
+         another fill, text and border colour, with a different hue in the family of the mode. The label of
+         the band says the value in words, so the colour is never the only cue. */
       .edges {
         position: relative;
         height: 28px;
@@ -409,6 +383,7 @@ export class CronoDay extends LitElement {
             <crono-band-row
               .hass=${this.hass}
               .band=${row}
+              .tint=${tints[rows.indexOf(row)] ?? 0}
               .errors=${this.errors?.get(row.key) ?? []}
               .step=${this.step}
               .presets=${this.presets}

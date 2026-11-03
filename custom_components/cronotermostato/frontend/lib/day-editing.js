@@ -271,6 +271,21 @@ export const TINT_COUNT = 4;
  * the value is the temperature, or the preset when there is no temperature. In a day, the same
  * mode and value always get the same tint; the first value met of a mode is tint 0, the next ones
  * 1, 2, 3 (then it starts again: the label says the rest). Bands without a value are tint 0.
+ *
+ * Palette for a Tessera plugin (or any other client) to reproduce: the index returned here (0..3) picks, for
+ * the mode of the band, the colours below, written as fill/text/border in sRGB hex. Index 0 is the plain
+ * colour of the mode; 1..3 differ in HUE, not only in lightness (CIEDE2000 between any two fills of a
+ * mode is >= 15, checked by tests/frontend/contrast.test.mjs, text 4.5:1, border 3:1). Heat: amber, brick
+ * red, gold, olive; cool: pale blue, cyan, violet, azure; off: four greys. The source of truth is
+ * styles.js (--crono-<mode>-v<n>-bg / -v<n> / -v<n>-line; v0 is --crono-<mode>-bg / <mode> / -line).
+ * Light theme:
+ *   heat: v0 #fde8bd/#7a4300/#9f6200; v1 #f08b74/#4f1204/#b3432a; v2 #ecd22e/#403600/#8f7a00; v3 #a3bf55/#1f2c02/#5f7a1c
+ *   cool: v0 #d8e6fd/#1b4a9e/#2f64c0; v1 #6fd9ea/#033b45/#0c8399; v2 #c3a3f0/#2e1070/#7a4fc0; v3 #6fa9f0/#06234f/#2f6fc4
+ *   off: v0 #e3e6ea/#464e5b/#757f8e; v1 #a4aab6/#14181d/#5f6672; v2 #747c8b/#05070a/#3f4652; v3 #38404c/#ffffff/#1c2229
+ * Dark theme:
+ *   heat: v0 #4a3410/#fcd38a/#b9791a; v1 #7f2e1a/#ffd9cd/#d9674a; v2 #7a6a00/#fff6b0/#bfa200; v3 #3c5c1c/#dff0b5/#7aa83c
+ *   cool: v0 #14305e/#b3cdff/#5b88d8; v1 #0a5c70/#c0f3fc/#2fa5c0; v2 #6b4fd6/#ffffff/#9a85f0; v3 #2a6fc0/#ffffff/#6aa6f0
+ *   off: v0 #2b3038/#c4cbd5/#8791a0; v1 #575e6b/#ffffff/#8a94a3; v2 #7f8999/#05070a/#b0b9c6; v3 #b4bdc9/#0b0e12/#d0d7e0
  */
 export function bandTints(bands) {
   const seen = new Map(); // mode -> [value keys in order of appearance]

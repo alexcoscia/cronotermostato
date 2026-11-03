@@ -19,6 +19,7 @@ const MODES = ["heat", "cool", "off"];
 export class CronoBandRow extends LitElement {
   static properties = {
     hass: { attribute: false },
+    tint: { type: Number }, // 0..3: variant of colour of the mode (bandTints of the day), 0 = the plain colour
     band: { attribute: false }, // a row of mergeDay: {key, start, end, mode, temperature, preset, auto}
     errors: { attribute: false }, // errors of this band
     step: { type: Number },
@@ -42,7 +43,7 @@ export class CronoBandRow extends LitElement {
       }
       .row {
         display: grid;
-        grid-template-columns: 8px minmax(0, 1fr);
+        grid-template-columns: 30px minmax(0, 1fr);
         border: 1px solid;
         border-radius: 10px;
         overflow: hidden;
@@ -60,12 +61,23 @@ export class CronoBandRow extends LitElement {
         outline: 3px solid var(--crono-focus);
         outline-offset: 2px;
       }
+      /* Side column with the chip of the band: the same fill, text and border colour as its segment in
+         the bar of the day (class b-<mode> + v<n>), so row and segment are matched by colour. */
       .sw {
-        background: currentColor;
+        display: flex;
+        justify-content: center;
+        padding-top: 12px;
       }
-      /* A calculated band: the stripes are in the side strip, the text stays on a plain background. */
-      .is-auto .sw {
-        background: repeating-linear-gradient(135deg, currentColor 0 3px, transparent 3px 7px);
+      .chip {
+        box-sizing: border-box;
+        width: 18px;
+        height: 18px;
+        border: 2px solid;
+        border-radius: 5px;
+      }
+      /* A calculated band: dashed border and stripes inside the chip (it carries no text). */
+      .chip.is-auto {
+        background-image: repeating-linear-gradient(135deg, currentColor 0 2px, transparent 2px 5px);
       }
       :host([highlight]) .row {
         animation: crono-added 1.6s ease-out 1;
@@ -309,6 +321,12 @@ export class CronoBandRow extends LitElement {
     };
   }
 
+  _chipClass(band) {
+    const mode = MODES.includes(band.mode) ? band.mode : "off";
+    const tint = Number.isInteger(this.tint) && this.tint > 0 && this.tint < 4 ? ` v${this.tint}` : "";
+    return `chip b-${mode}${tint}${band.auto ? " is-auto" : ""}`;
+  }
+
   _onMode = (event) => this._emit({ mode: event.target.value }, event.target);
 
   _onTemperature = (event) => this._emit({ temperature: event.target.value }, event.target);
@@ -410,7 +428,7 @@ export class CronoBandRow extends LitElement {
     if (locked) return this._renderReadOnly(t, { band, off, modeClass, rowLabel, header, tempValue });
     return html`
       <div class="row ${modeClass} ${band.auto ? "is-auto" : ""} ${errors.length ? "has-err" : ""}" role="group" aria-label=${rowLabel} tabindex="-1" @keydown=${this._onKeydown} @pointerdown=${this._onPointer}>
-        <span class="sw" aria-hidden="true"></span>
+        <span class="sw" aria-hidden="true"><span class=${this._chipClass(band)}></span></span>
         <div class="body">
           ${header}
           <span class="sr" id=${hintId}>${t("band.time_hint")}</span>
@@ -477,7 +495,7 @@ export class CronoBandRow extends LitElement {
     const preset = off || !band.preset ? null : String(band.preset);
     return html`
       <div class="row ro ${modeClass} ${band.auto ? "is-auto" : ""} ${errors.length ? "has-err" : ""}" role="group" aria-label=${rowLabel} tabindex="-1">
-        <span class="sw" aria-hidden="true"></span>
+        <span class="sw" aria-hidden="true"><span class=${this._chipClass(band)}></span></span>
         <div class="body">
           ${header}
           <dl class="values">

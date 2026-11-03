@@ -125,7 +125,7 @@ function palette(name) {
   const decls = ha && isDark(ha) ? { ...LIGHT_DECLS, ...DARK_DECLS } : LIGHT_DECLS;
   const out = {};
   for (const key of Object.keys(decls)) {
-    if (!/^(text|muted|bg|surface2?|line|accent|focus|error|error-bg|warn|warn-bg|ok|ok-bg|heat|heat-bg|heat-line|cool|cool-bg|cool-line|off|off-bg|off-line|field-line)$/.test(key)) continue;
+    if (!/^(text|muted|bg|surface2?|line|accent|focus|error|error-bg|warn|warn-bg|ok|ok-bg|heat|heat-bg|heat-line|cool|cool-bg|cool-line|off|off-bg|off-line|field-line|(?:heat|cool|off)-v[1-3](?:-bg|-line)?)$/.test(key)) continue;
     out[key] = parseColour(resolveValue(decls[key], ha, decls));
   }
   return out;
@@ -225,28 +225,115 @@ test("the tints of the modes are redundant with icon and text (documented, not a
   assert.match(day, /aria-label=\$\{label\}/); // and the full text for assistive technology
 });
 
-// Tints of the bar: bands of the same mode with another value get the background of the mode mixed with
-// the text colour of the mode (color-mix in srgb, shares read from crono-day.js). The text must stay readable.
+// Variants of colour of the bar, the strip of the week and the chip of a row: each mode has 4 fills
+// (variant 0 = the plain colour of the mode, 1..3 = --crono-<mode>-v<n>-bg / -v<n> / -v<n>-line). The
+// variants must (a) keep text at 4.5:1 and the border at 3:1 against the surface, (b) differ from each
+// other by a clearly visible CIEDE2000 (>= 15), and (c) never be mistaken for another mode: the fills
+// of different modes are >= 15 apart too, and hot stays in red-yellow-olive hues, cool in cyan-blue-violet,
+// off is grey (low chroma).
 const DAY_SRC = readFileSync(new URL("../../custom_components/cronotermostato/frontend/components/crono-day.js", import.meta.url), "utf8");
-const TINT_SHARES = [0, ...[...DAY_SRC.matchAll(/\.seg\.v\d \{\s*--tint: (\d+)%/g)].map((m) => Number(m[1]))];
+const WEEK_SRC = readFileSync(new URL("../../custom_components/cronotermostato/frontend/components/crono-week-tabs.js", import.meta.url), "utf8");
+const ROW_SRC = readFileSync(new URL("../../custom_components/cronotermostato/frontend/components/crono-band-row.js", import.meta.url), "utf8");
 
-test("crono-day defines one tint per variant", async () => {
+const toLab = ([r, g, b]) => {
+  const lin = (v) => channel(v);
+  const [R, G, B] = [lin(r), lin(g), lin(b)];
+  const X = (0.4124 * R + 0.3576 * G + 0.1805 * B) / 0.95047;
+  const Y = 0.2126 * R + 0.7152 * G + 0.0722 * B;
+  const Z = (0.0193 * R + 0.1192 * G + 0.9505 * B) / 1.08883;
+  const f = (t) => (t > 216 / 24389 ? Math.cbrt(t) : ((24389 / 27) * t + 16) / 116);
+  return [116 * f(Y) - 16, 500 * (f(X) - f(Y)), 200 * (f(Y) - f(Z))];
+};
+function deltaE2000([L1, a1, b1], [L2, a2, b2]) {
+  const rad = Math.PI / 180;
+  const deg = 180 / Math.PI;
+  const C1 = Math.hypot(a1, b1);
+  const C2 = Math.hypot(a2, b2);
+  const Cb = (C1 + C2) / 2;
+  const G = 0.5 * (1 - Math.sqrt(Cb ** 7 / (Cb ** 7 + 25 ** 7)));
+  const ap1 = (1 + G) * a1;
+  const ap2 = (1 + G) * a2;
+  const Cp1 = Math.hypot(ap1, b1);
+  const Cp2 = Math.hypot(ap2, b2);
+  const hue = (y, x) => (x === 0 && y === 0 ? 0 : ((Math.atan2(y, x) * deg) + 360) % 360);
+  const h1 = hue(b1, ap1);
+  const h2 = hue(b2, ap2);
+  let dh = 0;
+  if (Cp1 * Cp2 !== 0) {
+    dh = h2 - h1;
+    if (dh > 180) dh -= 360;
+    else if (dh < -180) dh += 360;
+  }
+  const dL = L2 - L1;
+  const dC = Cp2 - Cp1;
+  const dH = 2 * Math.sqrt(Cp1 * Cp2) * Math.sin((dh * rad) / 2);
+  const Lb = (L1 + L2) / 2;
+  const Cpb = (Cp1 + Cp2) / 2;
+  let hb = h1 + h2;
+  if (Cp1 * Cp2 !== 0) hb = Math.abs(h1 - h2) <= 180 ? (h1 + h2) / 2 : h1 + h2 < 360 ? (h1 + h2 + 360) / 2 : (h1 + h2 - 360) / 2;
+  const T = 1 - 0.17 * Math.cos((hb - 30) * rad) + 0.24 * Math.cos(2 * hb * rad) + 0.32 * Math.cos((3 * hb + 6) * rad) - 0.2 * Math.cos((4 * hb - 63) * rad);
+  const dTheta = 30 * Math.exp(-(((hb - 275) / 25) ** 2));
+  const Rc = 2 * Math.sqrt(Cpb ** 7 / (Cpb ** 7 + 25 ** 7));
+  const Sl = 1 + (0.015 * (Lb - 50) ** 2) / Math.sqrt(20 + (Lb - 50) ** 2);
+  const Sc = 1 + 0.045 * Cpb;
+  const Sh = 1 + 0.015 * Cpb * T;
+  const Rt = -Math.sin(2 * dTheta * rad) * Rc;
+  return Math.sqrt((dL / Sl) ** 2 + (dC / Sc) ** 2 + (dH / Sh) ** 2 + Rt * (dC / Sc) * (dH / Sh));
+}
+const hueOf = ([, a, b]) => ((Math.atan2(b, a) * 180) / Math.PI + 360) % 360;
+const chromaOf = ([, a, b]) => Math.hypot(a, b);
+
+/** The 4 variants of a mode in a situation: {bg, fg, line} as [r, g, b, a]. */
+const variants = (p, m) => [
+  { bg: p[`${m}-bg`], fg: p[m], line: p[`${m}-line`] },
+  ...[1, 2, 3].map((n) => ({ bg: p[`${m}-v${n}-bg`], fg: p[`${m}-v${n}`], line: p[`${m}-v${n}-line`] })),
+];
+
+test("the sources use the variants: the day bar, the week strip and the chip of the row", async () => {
   const { TINT_COUNT } = await import("../../custom_components/cronotermostato/frontend/lib/day-editing.js");
-  assert.equal(TINT_SHARES.length, TINT_COUNT);
+  assert.equal(TINT_COUNT, 4);
+  for (const m of MODES) for (const n of [1, 2, 3]) assert.match(SRC, new RegExp(`\\.b-${m}\\.v${n} \\{`));
+  assert.match(DAY_SRC, /v\$\{tint\}/);
+  assert.match(WEEK_SRC, /bandTints\(day\.rows\)/);
+  assert.match(WEEK_SRC, /v\$\{tint\}/);
+  assert.match(ROW_SRC, /_chipClass/);
+  assert.match(DAY_SRC, /\.tint=\$\{tints/); // the row gets the variant of its segment
+  assert.doesNotMatch(DAY_SRC, /color-mix/); // the old, invisible 8/15/22% wash is gone
 });
 
 for (const name of SITUATIONS) {
-  test(`text on every tint of every mode reaches 4.5:1 and the tints differ from each other (${name})`, () => {
+  test(`variants of every mode: text 4.5:1, border 3:1, fills >= 15 apart in CIEDE2000, no mix-up between modes (${name})`, () => {
     const p = palette(name);
+    const all = [];
     for (const m of MODES) {
-      const mixed = TINT_SHARES.map((share) => [0, 1, 2].map((i) => p[`${m}-bg`][i] * (1 - share / 100) + p[m][i] * (share / 100)).concat(1));
-      mixed.forEach((bg, i) => assert.ok(contrast(p[m], bg) >= 4.5, `${name}: ${m} tint ${i} is ${contrast(p[m], bg).toFixed(2)}`));
-      // neighbours are told apart by the eye at least a little (luminance ratio) ...
-      for (let i = 1; i < mixed.length; i++) {
-        const a = luminance(mixed[i - 1]);
-        const b = luminance(mixed[i]);
-        assert.ok((Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05) >= 1.08, `${name}: ${m} tints ${i - 1}/${i} too close`);
+      const v = variants(p, m);
+      v.forEach(({ bg, fg, line }, i) => {
+        assert.ok(contrast(fg, bg) >= 4.5, `${name}: ${m} v${i} text on fill is ${contrast(fg, bg).toFixed(2)}`);
+        assert.ok(contrast(line, p.surface) >= 3, `${name}: ${m} v${i} border on surface is ${contrast(line, p.surface).toFixed(2)}`);
+        assert.ok(contrast(line, p.surface2) >= 3, `${name}: ${m} v${i} border on bar is ${contrast(line, p.surface2).toFixed(2)}`);
+        all.push({ m, i, lab: toLab(bg) });
+      });
+      for (let i = 0; i < v.length; i++) {
+        for (let j = i + 1; j < v.length; j++) {
+          const d = deltaE2000(toLab(v[i].bg), toLab(v[j].bg));
+          assert.ok(d >= 15, `${name}: ${m} v${i}/v${j} differ by only dE ${d.toFixed(1)}`);
+        }
       }
+    }
+    // different modes: families by hue / chroma, and never closer than a variant is to its siblings
+    for (const x of all) {
+      const [, a, b] = x.lab;
+      const h = hueOf(x.lab);
+      if (x.m === "heat") assert.ok(h >= 0 && h <= 130 || h >= 340, `${name}: heat v${x.i} hue ${h.toFixed(0)} is not warm`);
+      if (x.m === "cool") assert.ok(h >= 180 && h <= 320, `${name}: cool v${x.i} hue ${h.toFixed(0)} is not cool`);
+      if (x.m === "off") assert.ok(chromaOf(x.lab) < 12, `${name}: off v${x.i} is not grey (chroma ${chromaOf(x.lab).toFixed(1)})`);
+      else assert.ok(chromaOf(x.lab) >= 8, `${name}: ${x.m} v${x.i} is too grey (${chromaOf(x.lab).toFixed(1)}), it would pass for "off" (${a.toFixed(0)},${b.toFixed(0)})`);
+    }
+    for (const x of all) for (const y of all) {
+      if (x.m === y.m) continue;
+      const d = deltaE2000(x.lab, y.lab);
+      // the plain colours (v0) are the pale washes the modes always had, 7 apart is what they have
+      assert.ok(d >= (x.i === 0 && y.i === 0 ? 7 : 12), `${name}: ${x.m} v${x.i} and ${y.m} v${y.i} are only dE ${d.toFixed(1)} apart`);
     }
   });
 }

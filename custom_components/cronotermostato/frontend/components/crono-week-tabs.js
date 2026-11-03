@@ -7,8 +7,8 @@
 import { LitElement, html, css, nothing, styleMap } from "../lit.js";
 import { base, modeColors } from "../styles.js";
 import { iconWarn, iconMode, iconFlag } from "../icons.js";
-import { createT, tn } from "../lib/i18n.js";
-import { stripSegments } from "../lib/day-editing.js";
+import { createT, tn, formatNumber } from "../lib/i18n.js";
+import { stripSegments, segmentDetail, bandTints, presetSigla, DETAIL_LEVELS } from "../lib/day-editing.js";
 
 const MODES = ["heat", "cool", "off"];
 const HOURS = [0, 6, 12, 18, 24];
@@ -18,6 +18,7 @@ export class CronoWeekTabs extends LitElement {
     hass: { attribute: false },
     days: { attribute: false },
     selected: { attribute: false },
+    _stripPx: { state: true },
   };
 
   static styles = [
@@ -112,7 +113,7 @@ export class CronoWeekTabs extends LitElement {
       }
       .strip {
         position: relative;
-        height: 32px;
+        height: 36px;
         border-radius: 8px;
         background: var(--crono-surface2);
         border: 1px solid var(--crono-line);
@@ -122,23 +123,50 @@ export class CronoWeekTabs extends LitElement {
         border-color: var(--crono-text);
         box-shadow: 0 0 0 1px var(--crono-text);
       }
+      /* One band: the same fill, text and border colour as in the bar of the day (b-<mode> + v<n> of
+         styles.js), a 1px gap on each side of every edge so the limits between bands are always seen. */
       .s {
         position: absolute;
-        top: 0;
-        bottom: 0;
+        top: 2px;
+        bottom: 2px;
         min-width: 3px;
-        border: 0;
-        border-inline-start: 1px solid var(--crono-surface);
-        border-inline-end: 1px solid var(--crono-surface);
+        box-sizing: border-box;
+        border: 1.5px solid;
+        border-radius: 6px;
         display: flex;
         align-items: center;
         justify-content: center;
+        gap: 3px;
         overflow: hidden;
         pointer-events: none;
+        font-size: 11.5px;
+        font-weight: 700;
+        line-height: 1;
+        white-space: nowrap;
+        font-variant-numeric: tabular-nums;
       }
       .s .ic {
-        width: 14px;
-        height: 14px;
+        width: 13px;
+        height: 13px;
+        flex: none;
+      }
+      .s .v {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        min-width: 0;
+      }
+      /* Calculated: dashed border and stripes in a strip at the foot, never behind the text. */
+      .s.is-auto {
+        padding-bottom: 5px;
+      }
+      .s.is-auto::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: 4px;
+        background: repeating-linear-gradient(135deg, currentColor 0 2px, transparent 2px 5px);
       }
       .s.err {
         outline: 2px solid var(--crono-error);
@@ -166,6 +194,42 @@ export class CronoWeekTabs extends LitElement {
     this.hass = undefined;
     this.days = [];
     this.selected = 0;
+    this._stripPx = 0;
+    this._observer = null;
+  }
+
+  updated() {
+    const strip = this.renderRoot.querySelector(".strip");
+    if (strip && !this._observed && typeof ResizeObserver === "function") {
+      this._observed = strip;
+      this._observer = new ResizeObserver(() => {
+        this._stripPx = strip.clientWidth;
+      });
+      this._observer.observe(strip);
+    }
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    this._observer?.disconnect();
+    this._observer = null;
+    this._observed = null;
+  }
+
+  _segment(row, seg, tint) {
+    const level = DETAIL_LEVELS.indexOf(segmentDetail((seg.width / 100) * this._stripPx));
+    const mode = MODES.includes(row.mode) ? row.mode : "off";
+    const cls = [`b-${mode}`, tint > 0 ? `v${tint}` : "", row.auto ? "is-auto" : "", "s"].filter(Boolean).join(" ");
+    const hasTemp = row.temperature !== null && row.temperature !== undefined && row.temperature !== "" && Number.isFinite(Number(row.temperature));
+    const temperature = hasTemp ? formatNumber(this.hass, row.temperature, { maximumFractionDigits: 2 }) : "";
+    const preset = row.preset ? String(row.preset) : "";
+    const value = temperature || preset;
+    const sigla = temperature || presetSigla(preset);
+    return html`<span class=${cls} style=${styleMap({ left: `calc(${seg.left}% + 1px)`, width: `calc(${seg.width}% - 2px)` })}>
+      ${level === 1 ? (sigla ? html`<span class="v">${sigla}</span>` : iconMode(row.mode)) : nothing}
+      ${level >= 2 ? iconMode(row.mode) : nothing}
+      ${level >= 2 && value ? html`<span class="v">${value}</span>` : nothing}
+    </span>`;
   }
 
   _choose(id) {
@@ -188,11 +252,10 @@ export class CronoWeekTabs extends LitElement {
                 ${day.errorCount > 0 ? html`<span class="bang" aria-hidden="true">${iconWarn()}</span>` : nothing}
               </button>
               <div class="strip" aria-hidden="true">
-                ${stripSegments(day.rows).map((seg) => {
-                  const row = day.rows[seg.index];
-                  const cls = [`b-${MODES.includes(row.mode) ? row.mode : "off"}`, row.auto ? "is-auto hatch" : "", "s"].filter(Boolean).join(" ");
-                  return html`<span class=${cls} style=${styleMap({ left: `${seg.left}%`, width: `${seg.width}%` })}>${seg.width >= 9 ? iconMode(row.mode) : nothing}</span>`;
-                })}
+                ${(() => {
+                  const tints = bandTints(day.rows);
+                  return stripSegments(day.rows).map((seg) => this._segment(day.rows[seg.index], seg, tints[seg.index]));
+                })()}
               </div>
             </div>`;
           })}
