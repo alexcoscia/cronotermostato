@@ -5,9 +5,10 @@
 // Names, areas, presets and statuses are bound as text, never as markup.
 
 import { LitElement, html, css, nothing } from "../lit.js";
-import { base, modeColors } from "../styles.js";
+import { base, modeColors, fields } from "../styles.js";
 import { iconCheck, iconWarn, iconX, iconInfo, iconPause, iconHand, iconAuto, iconMode } from "../icons.js";
-import { createT } from "../lib/i18n.js";
+import { createT, formatNumber } from "../lib/i18n.js";
+import { tableOf, presetInputIssue, tableToSend } from "../lib/preset-temps.js";
 import { statusInfo, statusText, untilText, manualText, nextText, settingText, availableActions } from "../lib/rooms.js";
 
 const ICONS = { check: iconCheck, warn: iconWarn, x: iconX, info: iconInfo, pause: iconPause };
@@ -19,12 +20,14 @@ export class CronoRoomCard extends LitElement {
     canEdit: { type: Boolean },
     busy: { type: Boolean },
     error: { type: String },
+    _draft: { state: true }, // {preset: text} typed in the preset temperatures, null = as the server has them
     compact: { type: Boolean, reflect: true }, // denser layout for the Lovelace card (CSS only: same content, same logic)
   };
 
   static styles = [
     base,
     modeColors,
+    fields,
     css`
       :host {
         display: block;
@@ -187,6 +190,45 @@ export class CronoRoomCard extends LitElement {
         opacity: 0.6;
         cursor: progress;
       }
+      details.pt {
+        border: 1px solid var(--crono-line);
+        border-radius: 10px;
+        padding: 0 10px;
+      }
+      details.pt summary {
+        min-height: 44px;
+        display: flex;
+        align-items: center;
+        cursor: pointer;
+        font-weight: 600;
+      }
+      details.pt summary:focus-visible {
+        outline: 3px solid var(--crono-focus);
+        outline-offset: 2px;
+      }
+      .pt-body {
+        display: grid;
+        gap: 10px;
+        padding-bottom: 10px;
+      }
+      .pt-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+        gap: 10px;
+      }
+      .pt-body .muted {
+        font-size: 13px;
+      }
+      .pt-cell {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        min-width: 0;
+      }
+      .pt-cell label {
+        overflow-wrap: anywhere;
+        font-size: 13px;
+      }
       @container (max-width: 340px) {
         .acts .btn {
           flex: 1 1 100%;
@@ -233,10 +275,89 @@ export class CronoRoomCard extends LitElement {
     this.busy = false;
     this.error = null;
     this.compact = false;
+    this._draft = null;
+    this._seen = "";
   }
 
-  _emit(name) {
-    this.dispatchEvent(new CustomEvent(name, { detail: { row: this.row }, bubbles: true, composed: true }));
+  willUpdate() {
+    // The table changed on the server (saved here or elsewhere): what was typed is no longer a draft.
+    const now = JSON.stringify(tableOf(this.row?.server));
+    if (now !== this._seen) {
+      this._seen = now;
+      this._draft = null;
+    }
+  }
+
+  _onPresetInput(preset, event) {
+    this._draft = { ...(this._draft ?? {}), [preset]: event.target.value };
+  }
+
+  _savePresets = (event) => {
+    event.preventDefault();
+    const climate = this.row?.climate;
+    if (!climate || this.busy || this._draft === null || this._draftIssues(climate).size > 0) return;
+    this._emit("crono-room-presets", { table: tableToSend(this._values(climate), climate) });
+  };
+
+  _values(climate) {
+    const table = tableOf(this.row?.server);
+    return Object.fromEntries(climate.presetModes.map((p) => [p, this._draft && Object.hasOwn(this._draft, p) ? this._draft[p] : Object.hasOwn(table, p) ? String(table[p]) : ""]));
+  }
+
+  _draftIssues(climate) {
+    const issues = new Map();
+    for (const [preset, text] of Object.entries(this._values(climate))) {
+      const issue = presetInputIssue(text, climate);
+      if (issue) issues.set(preset, issue);
+    }
+    return issues;
+  }
+
+  _renderPresets(t, blocked) {
+    const row = this.row;
+    const climate = row.climate;
+    if (this.compact || !this.canEdit || !row.assignedHere || !climate || climate.presetModes.length === 0) return nothing;
+    const values = this._values(climate);
+    const issues = this._draftIssues(climate);
+    const dirty = this._draft !== null;
+    const fmt = (n) => formatNumber(this.hass, n, { maximumFractionDigits: 2 });
+    const message = (issue) =>
+      issue === "out_of_range" ? t("room.temperature_limits", { min: fmt(climate.minTemp), max: fmt(climate.maxTemp) }) : issue === "bad_step" ? t("presets.bad_step", { step: fmt(climate.step) }) : t("presets.not_number");
+    const uid = `pt-${row.id.replace(/[^a-z0-9_-]/gi, "_")}`;
+    return html`<details class="pt">
+      <summary>${t("presets.title")}</summary>
+      <form class="pt-body" @submit=${this._savePresets}>
+        <p class="muted" id=${`${uid}-help`}>${t("presets.help")}</p>
+        <div class="pt-grid">
+          ${climate.presetModes.map(
+            (preset) => html`<div class="pt-cell">
+              <label for=${`${uid}-${preset}`}>${preset}</label>
+              <input
+                id=${`${uid}-${preset}`}
+                type="number"
+                inputmode="decimal"
+                step=${climate.step}
+                min=${climate.minTemp}
+                max=${climate.maxTemp}
+                placeholder="—"
+                .value=${values[preset]}
+                aria-invalid=${issues.has(preset) ? "true" : "false"}
+                aria-describedby=${issues.has(preset) ? `${uid}-help ${uid}-${preset}-err` : `${uid}-help`}
+                @input=${(e) => this._onPresetInput(preset, e)}
+              />
+              ${issues.has(preset) ? html`<span class="fe" id=${`${uid}-${preset}-err`}>${iconWarn()}<span>${message(issues.get(preset))}</span></span>` : nothing}
+            </div>`,
+          )}
+        </div>
+        <div class="acts">
+          <button class="btn primary" type="submit" aria-disabled=${blocked !== nothing || !dirty || issues.size > 0 ? "true" : nothing}>${t("common.save")}</button>
+        </div>
+      </form>
+    </details>`;
+  }
+
+  _emit(name, extra = {}) {
+    this.dispatchEvent(new CustomEvent(name, { detail: { row: this.row, ...extra }, bubbles: true, composed: true }));
   }
 
   render() {
@@ -289,6 +410,7 @@ export class CronoRoomCard extends LitElement {
               ${next ? html`<span class="muted next">${next}</span>` : nothing}
             </div>`
           : nothing}
+        ${this._renderPresets(t, blocked)}
         ${this.error ? html`<p class="msg error" role="alert">${iconWarn()}<span>${this.error}</span></p>` : nothing}
         ${this.busy ? html`<span class="sr" role="status">${t("room.working")}</span>` : nothing}
         ${actions.note ? html`<p class="muted">${t(actions.note)}</p>` : nothing}

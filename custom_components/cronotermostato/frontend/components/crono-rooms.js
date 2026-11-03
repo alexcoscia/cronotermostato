@@ -8,7 +8,7 @@ import { LitElement, html, css, nothing } from "../lit.js";
 import { base } from "../styles.js";
 import { iconWarn } from "../icons.js";
 import { createT, languageOf } from "../lib/i18n.js";
-import { pauseRoom, resumeRoom, resumeAuto } from "../lib/api.js";
+import { pauseRoom, resumeRoom, resumeAuto, setPresetTemperatures } from "../lib/api.js";
 import { dayLabel, HOLIDAY } from "../lib/day-editing.js";
 import { roomRows, toggleAction, toggleRoom, availableActions, reconcileManual, issueParams, forceRoom, createGuard, runAction, actionErrorMessage } from "../lib/rooms.js";
 import "./crono-room-card.js";
@@ -193,6 +193,14 @@ export class CronoRooms extends LitElement {
     this._act(row, () => resumeAuto(this.hass, row.id));
   };
 
+  // ---- Temperatures of the presets (informative table of the room) --------------------------------------
+
+  _onPresets = async (event) => {
+    const { row, table } = event.detail;
+    if (!this.canEdit || !row?.assignedHere) return;
+    this._act(row, () => setPresetTemperatures(this.hass, row.id, table));
+  };
+
   // ---- Forcing ----------------------------------------------------------------------------------------------
 
   willUpdate() {
@@ -265,6 +273,7 @@ export class CronoRooms extends LitElement {
                     @crono-room-pause=${this._onPause}
                     @crono-room-resume=${this._onResume}
                     @crono-room-auto=${this._onAuto}
+                    @crono-room-presets=${this._onPresets}
                   ></crono-room-card>
                 </li>`,
               )}

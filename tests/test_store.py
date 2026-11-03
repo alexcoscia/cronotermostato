@@ -443,3 +443,75 @@ async def test_load_discards_invalid_stored_preset(hass):
     )
     assert list(store.programs) == ["casa"]
     assert store.overrides == {}
+
+
+# -- preset temperature table (informative, per assigned room) ----------------
+
+
+async def test_preset_temperatures_roundtrip_and_survive_reassign(hass):
+    store = await _store(hass)
+    a = await store.async_create_program("A", WEEK, HOLIDAY)
+    b = await store.async_create_program("B", WEEK, HOLIDAY)
+    await store.async_assign(ROOM, a.id)
+    await store.async_set_preset_temperatures(ROOM, {"home": 20, "away": 16.5, "eco": None})
+    assert store.assignments[ROOM].preset_temperatures == {"home": 20.0, "away": 16.5}
+    await store.async_assign(ROOM, b.id)  # another program: the table stays
+    other = await _store(hass)
+    assert other.assignments[ROOM].preset_temperatures == {"home": 20.0, "away": 16.5}
+    await other.async_unassign(ROOM)
+    await other.async_assign(ROOM, a.id)
+    assert other.assignments[ROOM].preset_temperatures == {}
+
+
+async def test_preset_temperatures_notifies_only_on_change(hass):
+    store = await _store(hass)
+    prog = await store.async_create_program("A", WEEK, HOLIDAY)
+    await store.async_assign(ROOM, prog.id)
+    seen = []
+    store.async_add_listener(lambda: seen.append(1))
+    await store.async_set_preset_temperatures(ROOM, {"home": 20})
+    await store.async_set_preset_temperatures(ROOM, {"home": 20.0})
+    assert len(seen) == 1
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [{"home": "20"}, {"home": True}, {"home": float("nan")}, {"home": float("inf")}, {"": 20}, {" ": 20}, [1]],
+)
+async def test_preset_temperatures_validation(hass, bad):
+    store = await _store(hass)
+    prog = await store.async_create_program("A", WEEK, HOLIDAY)
+    await store.async_assign(ROOM, prog.id)
+    with pytest.raises(ProgramError):
+        await store.async_set_preset_temperatures(ROOM, bad)
+    assert store.assignments[ROOM].preset_temperatures == {}
+
+
+async def test_preset_temperatures_unassigned_room(hass):
+    store = await _store(hass)
+    with pytest.raises(ProgramError) as err:
+        await store.async_set_preset_temperatures(ROOM, {"home": 20})
+    assert err.value.code == "not_assigned"
+
+
+async def test_old_data_without_table_and_bad_table_load(hass):
+    prog = program_to_dict(
+        __import__("custom_components.cronotermostato.engine.models", fromlist=["Program"]).Program(
+            "casa", "Casa", WEEK, HOLIDAY
+        )
+    )
+    raw = Store(hass, STORAGE_VERSION, DOMAIN)
+    await raw.async_save(
+        {
+            "programs": [prog],
+            "assignments": {
+                ROOM: {"program_id": "casa", "paused": False},
+                "climate.b": {"program_id": "casa", "preset_temperatures": {"x": "caldo"}},
+                "climate.c": {"program_id": "casa", "preset_temperatures": {"home": 21}},
+            },
+        }
+    )
+    store = await _store(hass)
+    assert store.assignments[ROOM].preset_temperatures == {}
+    assert store.assignments["climate.b"].preset_temperatures == {}
+    assert store.assignments["climate.c"].preset_temperatures == {"home": 21.0}

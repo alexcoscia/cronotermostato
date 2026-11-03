@@ -14,6 +14,11 @@ Design decisions:
   ``hass`` always reads the latest data.
 * Presets are optional everywhere: data saved before they existed has no
   ``preset`` key and loads with ``None``.
+* Each assignment may carry ``preset_temperatures`` (preset name -> degrees,
+  informative only: the editor shows it when a band uses the preset; the
+  engine never reads it). Data saved before it existed has no such key and
+  loads with an empty map, so ``STORAGE_VERSION`` stays 1. It belongs to the
+  room, so it survives a change of program and goes away with the assignment.
 * Override ``until`` is stored as an ISO string in UTC and read back as an
   aware UTC datetime; compare instants, not wall-clock times.
 """
@@ -21,9 +26,10 @@ Design decisions:
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 import logging
+import math
 import re
 import unicodedata
 from typing import Any
@@ -55,6 +61,7 @@ class Assignment:
 
     program_id: str
     paused: bool = False
+    preset_temperatures: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass
@@ -89,6 +96,31 @@ def _clean_week(week: Sequence[Sequence[Band]]) -> tuple[tuple[Band, ...], ...]:
             f"A program needs exactly {DAYS_PER_WEEK} days", "bad_program"
         )
     return tuple(_user_bands(day) for day in week)
+
+
+def clean_preset_temperatures(raw: Any) -> dict[str, float]:
+    """Validate ``{preset: degrees}``; ``None`` values mean "unknown" and are dropped."""
+    if not isinstance(raw, Mapping):
+        raise ProgramError("Preset temperatures must be a mapping", "bad_preset_temperature")
+    clean: dict[str, float] = {}
+    for preset, value in raw.items():
+        if not isinstance(preset, str) or not preset.strip():
+            raise ProgramError(
+                f"Preset must be a non-empty string: {preset!r}", "bad_preset"
+            )
+        if value is None:
+            continue
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+        ):
+            raise ProgramError(
+                f"Temperature of preset {preset!r} must be a number: {value!r}",
+                "bad_preset_temperature",
+            )
+        clean[preset] = float(value)
+    return clean
 
 
 def _clean_name(name: Any) -> str:
@@ -143,8 +175,13 @@ class CronoStore:
                 continue
             program_id = raw.get("program_id")
             if isinstance(program_id, str) and program_id in self.programs:
+                try:
+                    temps = clean_preset_temperatures(raw.get("preset_temperatures") or {})
+                except ProgramError as err:
+                    _LOGGER.warning("Ignoring invalid preset temperatures: %r", err)
+                    temps = {}
                 self.assignments[climate_id] = Assignment(
-                    program_id, bool(raw.get("paused", False))
+                    program_id, bool(raw.get("paused", False)), temps
                 )
         self.overrides = {}
         overrides = data.get("overrides")
@@ -177,7 +214,11 @@ class CronoStore:
         return {
             "programs": [program_to_dict(p) for p in self.programs.values()],
             "assignments": {
-                cid: {"program_id": a.program_id, "paused": a.paused}
+                cid: {
+                    "program_id": a.program_id,
+                    "paused": a.paused,
+                    "preset_temperatures": dict(a.preset_temperatures),
+                }
                 for cid, a in self.assignments.items()
             },
             "overrides": {
@@ -281,7 +322,9 @@ class CronoStore:
         if old and old.program_id == program_id:
             return
         self.assignments[climate_id] = Assignment(
-            program_id, old.paused if old else False
+            program_id,
+            old.paused if old else False,
+            old.preset_temperatures if old else {},
         )
         if old and old.program_id != program_id:
             self.overrides.pop(climate_id, None)
@@ -301,6 +344,17 @@ class CronoStore:
         if assignment.paused == paused:
             return
         assignment.paused = paused
+        await self._async_changed()
+
+    async def async_set_preset_temperatures(
+        self, climate_id: str, temperatures: Mapping[str, Any]
+    ) -> None:
+        """Replace the preset -> degrees table of an assigned room."""
+        assignment = self._assignment(climate_id)
+        clean = clean_preset_temperatures(temperatures)
+        if assignment.preset_temperatures == clean:
+            return
+        assignment.preset_temperatures = clean
         await self._async_changed()
 
     def _assignment(self, climate_id: str) -> Assignment:

@@ -106,6 +106,17 @@ export async function unassign(hass, climateEntityId) {
   await ws(hass, { type: `${DOMAIN}/unassign`, climate_entity_id: climateEntityId });
 }
 
+/** Replace the preset -> degrees table of an assigned room (informative: the engine never reads it). */
+export async function setPresetTemperatures(hass, climateEntityId, presetTemperatures) {
+  const result = await ws(hass, { type: `${DOMAIN}/set_preset_temperatures`, climate_entity_id: climateEntityId, preset_temperatures: presetTemperatures });
+  return result?.preset_temperatures ?? {};
+}
+
+export async function getPresetTemperatures(hass, climateEntityId) {
+  const result = await ws(hass, { type: `${DOMAIN}/get_preset_temperatures`, climate_entity_id: climateEntityId });
+  return result?.preset_temperatures ?? {};
+}
+
 export const pauseRoom = (hass, climateEntityId) => service(hass, "pause", { climate_entity_id: climateEntityId });
 export const resumeRoom = (hass, climateEntityId) => service(hass, "resume", { climate_entity_id: climateEntityId });
 export const resumeAuto = (hass, climateEntityId) => service(hass, "resume_auto", { climate_entity_id: climateEntityId });

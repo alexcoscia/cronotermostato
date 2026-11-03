@@ -4,7 +4,7 @@ Home Assistant custom integration (HACS): reusable weekly thermostat programs
 (time slots with mode and temperature, plus a holiday day chosen by country),
 assigned to any number of `climate` entities ("rooms"), with a manual override.
 
-Status: version 0.3.2, **not yet tested on a live Home Assistant** (neither the integration nor
+Status: version 0.4.0, **not yet tested on a live Home Assistant** (neither the integration nor
 the editor). Parts 1 and 2 of 3 (the integration and its editor) are in this repository; the Tessera
 tile is a separate project.
 
@@ -74,6 +74,26 @@ add any Lovelace resource by hand**.
     - climate.soggiorno
   ```
 
+### Temperatures of the presets
+
+Home Assistant does not say which temperature a preset sets (only the setpoint of the one that is
+active), so the integration keeps a **table per assigned room**: preset name to degrees. You fill it in
+the editor, in the room's card under *Temperature dei preset* / *Temperatures of the presets* (one field
+per preset of the thermostat; empty means unknown; values must respect the thermostat's limits and
+`target_temp_step`).
+
+The table is **informative only**: the engine never reads it and keeps sending the preset to the
+thermostat. In a band, when you choose a preset that the reference room has, the temperature field shows
+the table value, read only, and the + and - buttons are disabled, with a note. If the table has no value
+the field is empty and still disabled ("not set"); with "all rooms" and different values it says the value
+varies from room to room. With "no preset", or a free-text preset the reference rooms do not have, the
+field and + / - work as usual. Choosing a known preset clears the band's own temperature (the band is saved
+with the preset only, as before); going back to "no preset" leaves the field empty for you to fill in. A band
+saved earlier with both a preset and a temperature keeps its own temperature, editable. Storage format: the
+assignment gets an optional `preset_temperatures` map (old data loads with an empty one; the storage version
+stays 1). WebSocket commands: `get_preset_temperatures` (open) and `set_preset_temperatures` (follows
+`admin_only`); the table is also in `state` under each room.
+
 The editor texts are in Italian and English (they follow the language of the Home Assistant user).
 Colours come from the Home Assistant theme.
 
@@ -81,7 +101,7 @@ Colours come from the Home Assistant theme.
 
 - `admin_only` (default on) controls two things: whether the sidebar entry is visible to
   non-administrators, and whether the editor's write commands (`save_program`, `delete_program`,
-  `assign`, `unassign` over the WebSocket) are accepted from a non-administrator
+  `assign`, `unassign`, `set_preset_temperatures` over the WebSocket) are accepted from a non-administrator
   (`unauthorized` otherwise).
 - Pause, resume, manual override and "back to automatic" are open to every authenticated user, on
   purpose: they are what a wall tile or a family member needs.

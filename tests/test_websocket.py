@@ -830,3 +830,67 @@ async def test_unassign_rejects_non_climate(env, hass_ws_client):  # noqa: F811
     client = await hass_ws_client(env.hass)
     msg = await ws(client, "unassign", climate_entity_id="sensor.x")
     assert not msg["success"] and msg["error"]["code"] == "invalid_format"
+
+
+# -- preset temperature table -------------------------------------------------
+
+
+async def _assigned(env, client):
+    pid = (await ws(client, "save_program", **save_data()))["result"]["program_id"]
+    assert (await ws(client, "assign", program_id=pid, climate_entity_id=ROOM))["success"]
+
+
+async def test_preset_temperatures_set_get_and_state(env, hass_ws_client):  # noqa: F811
+    client = await hass_ws_client(env.hass)
+    await _assigned(env, client)
+    msg = await ws(client, "get_preset_temperatures", climate_entity_id=ROOM)
+    assert msg["result"] == {"preset_temperatures": {}}
+    msg = await ws(
+        client, "set_preset_temperatures", climate_entity_id=ROOM,
+        preset_temperatures={"home": 20, "eco": 17.5, "none": None},
+    )
+    assert msg["success"] and msg["result"] == {"preset_temperatures": {"home": 20.0, "eco": 17.5}}
+    assert env.store.assignments[ROOM].preset_temperatures == {"home": 20.0, "eco": 17.5}
+    msg = await ws(client, "get_preset_temperatures", climate_entity_id=ROOM)
+    assert msg["result"]["preset_temperatures"] == {"home": 20.0, "eco": 17.5}
+    msg = await ws(client, "state")
+    assert msg["result"]["rooms"][0]["preset_temperatures"] == {"home": 20.0, "eco": 17.5}
+    assert not any(c[1] == "set_temperature" and c[2] == 20.0 for c in env.calls)
+
+
+async def test_preset_temperatures_validation_against_climate(env, hass_ws_client):  # noqa: F811
+    env.hass.states.async_set(
+        ROOM, "heat",
+        {"hvac_modes": ["heat", "off"], "preset_modes": ["home", "eco"],
+         "min_temp": 7, "max_temp": 30, "target_temp_step": 0.5},
+    )
+    client = await hass_ws_client(env.hass)
+    await _assigned(env, client)
+    for bad in ({"home": 31}, {"home": 6}, {"home": 20.2}, {"fantasma": 20}, {"home": "x"}, {"home": True}):
+        msg = await ws(client, "set_preset_temperatures", climate_entity_id=ROOM, preset_temperatures=bad)
+        assert not msg["success"] and msg["error"]["code"] == "invalid_format", bad
+        assert msg["error"]["detail_code"] in ("bad_preset_temperature", "bad_preset")
+    assert env.store.assignments[ROOM].preset_temperatures == {}
+    msg = await ws(client, "set_preset_temperatures", climate_entity_id=ROOM, preset_temperatures={"home": 7, "eco": 30})
+    assert msg["success"]
+
+
+async def test_preset_temperatures_unassigned(env, hass_ws_client):  # noqa: F811
+    client = await hass_ws_client(env.hass)
+    msg = await ws(client, "set_preset_temperatures", climate_entity_id=ROOM, preset_temperatures={"home": 20})
+    assert not msg["success"] and msg["error"]["code"] == "not_found"
+    msg = await ws(client, "get_preset_temperatures", climate_entity_id=ROOM)
+    assert not msg["success"] and msg["error"]["code"] == "not_found"
+
+
+async def test_preset_temperatures_admin_only(env, hass_ws_client, hass_read_only_access_token):  # noqa: F811
+    admin = await hass_ws_client(env.hass)
+    await _assigned(env, admin)
+    client = await hass_ws_client(env.hass, hass_read_only_access_token)
+    msg = await ws(client, "set_preset_temperatures", climate_entity_id=ROOM, preset_temperatures={"home": 20})
+    assert not msg["success"] and msg["error"]["code"] == "unauthorized"
+    msg = await ws(client, "get_preset_temperatures", climate_entity_id=ROOM)
+    assert msg["success"]
+    set_admin_only(env, False)
+    msg = await ws(client, "set_preset_temperatures", climate_entity_id=ROOM, preset_temperatures={"home": 20})
+    assert msg["success"]

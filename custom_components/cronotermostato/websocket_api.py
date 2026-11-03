@@ -43,6 +43,15 @@ Design decisions:
 * ``save_program`` discards incoming bands with ``auto: true`` before
   validating, like ``preview_day``: automatic bands are computed, never saved,
   so a stale one cannot cause an overlap.
+* ``get_preset_temperatures`` / ``set_preset_temperatures`` read and replace
+  the preset -> degrees table of an assigned room (informative: the engine
+  never reads it; the same table is in ``state`` under each room). The write
+  follows ``admin_only``. ``set`` takes the whole table (a ``null`` value or a
+  missing preset means "unknown") and, when the climate is available, checks
+  each value against its ``min_temp``/``max_temp`` and ``target_temp_step``
+  (a multiple of the step) and each preset against its ``preset_modes``.
+  Errors are ``invalid_format`` with ``detail_code`` ``bad_preset_temperature``
+  / ``bad_preset``, ``not_assigned`` for a room with no assignment.
 * ``countries`` is large: computed once in the executor and cached.
 """
 
@@ -50,6 +59,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from functools import cache
+import math
 from typing import Any
 
 import voluptuous as vol
@@ -70,6 +80,7 @@ from .const import (
     SIGNAL_ROOMS_CHANGED,
     entry_admin_only,
 )
+from .controller import temperature_limits
 from .engine.calendar import supported_countries
 from .engine.day import program_views
 from .engine.models import (
@@ -78,6 +89,7 @@ from .engine.models import (
     program_from_dict,
     program_revision,
 )
+from .store import clean_preset_temperatures
 from .entity import room_name, slot_dict
 from .services import (
     async_assign_room,
@@ -106,6 +118,8 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_delete_program)
     websocket_api.async_register_command(hass, ws_assign)
     websocket_api.async_register_command(hass, ws_unassign)
+    websocket_api.async_register_command(hass, ws_get_preset_temperatures)
+    websocket_api.async_register_command(hass, ws_set_preset_temperatures)
     websocket_api.async_register_command(hass, ws_subscribe)
 
 
@@ -205,6 +219,7 @@ def ws_state(
                 "program_id": assignment.program_id,
                 "program_name": program.name if program else None,
                 "paused": assignment.paused,
+                "preset_temperatures": dict(assignment.preset_temperatures),
                 "climate_available": (
                     climate is not None and climate.state != STATE_UNAVAILABLE
                 ),
@@ -486,3 +501,92 @@ def ws_subscribe(
     connection.subscriptions[msg_id] = unsubscribe
     follow_rooms()
     connection.send_result(msg_id)
+
+
+def _check_against_climate(hass: HomeAssistant, climate_id: str, temps: dict[str, float]) -> None:
+    """Limits, step and preset names of the climate, when it is available."""
+    state = hass.states.get(climate_id)
+    if state is None or state.state == STATE_UNAVAILABLE:
+        return
+    low, high = temperature_limits(state)
+    raw_step = state.attributes.get("target_temp_step")
+    step = (
+        float(raw_step)
+        if isinstance(raw_step, (int, float))
+        and not isinstance(raw_step, bool)
+        and math.isfinite(raw_step)
+        and raw_step > 0
+        else None
+    )
+    presets = state.attributes.get("preset_modes")
+    for preset, value in temps.items():
+        if isinstance(presets, list) and presets and preset not in presets:
+            raise ProgramError(f"Unknown preset: {preset!r}", "bad_preset")
+        if not low <= value <= high:
+            raise ProgramError(
+                f"Temperature of {preset!r} outside {low}..{high}: {value}",
+                "bad_preset_temperature",
+            )
+        if step is not None:
+            ratio = value / step
+            if abs(ratio - round(ratio)) > 1e-6:
+                raise ProgramError(
+                    f"Temperature of {preset!r} is not a multiple of {step}: {value}",
+                    "bad_preset_temperature",
+                )
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "cronotermostato/get_preset_temperatures",
+        vol.Required("climate_entity_id"): str,
+    }
+)
+@callback
+def ws_get_preset_temperatures(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """The preset -> degrees table of an assigned room."""
+    loaded = _loaded_data(connection, msg)
+    if loaded is None:
+        return
+    assignment = loaded[1].store.assignments.get(msg["climate_entity_id"])
+    if assignment is None:
+        connection.send_error(
+            msg["id"], ERR_NOT_FOUND, f"Room not assigned: {msg['climate_entity_id']}"
+        )
+        return
+    connection.send_result(
+        msg["id"], {"preset_temperatures": dict(assignment.preset_temperatures)}
+    )
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "cronotermostato/set_preset_temperatures",
+        vol.Required("climate_entity_id"): str,
+        vol.Required("preset_temperatures"): dict,
+    }
+)
+@websocket_api.async_response
+async def ws_set_preset_temperatures(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Replace the preset -> degrees table of an assigned room."""
+    data = _writer(connection, msg)
+    if data is None:
+        return
+    climate_id = msg["climate_entity_id"]
+    if climate_id not in data.store.assignments:
+        connection.send_error(
+            msg["id"], ERR_NOT_FOUND, f"Room not assigned: {climate_id}"
+        )
+        return
+    try:
+        clean = clean_preset_temperatures(msg["preset_temperatures"])
+        _check_against_climate(hass, climate_id, clean)
+        await data.store.async_set_preset_temperatures(climate_id, clean)
+    except ProgramError as err:
+        _send_program_error(connection, msg, err)
+        return
+    connection.send_result(msg["id"], {"preset_temperatures": clean})

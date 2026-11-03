@@ -28,6 +28,7 @@ export class CronoDay extends LitElement {
     presets: { attribute: false },
     hasRooms: { type: Boolean },
     referenceName: { type: String },
+    presetTemp: { attribute: false }, // (preset) => table info of the reference rooms (see crono-band-row)
     readOnly: { type: Boolean },
     canAdd: { type: Boolean },
     holiday: { type: Boolean }, // the holiday part, not a day of the week
@@ -223,6 +224,7 @@ export class CronoDay extends LitElement {
     this.presets = [];
     this.hasRooms = false;
     this.referenceName = "";
+    this.presetTemp = null;
     this.readOnly = false;
     this.canAdd = true;
     this.holiday = false;
@@ -389,6 +391,7 @@ export class CronoDay extends LitElement {
               .presets=${this.presets}
               .hasRooms=${this.hasRooms}
               .referenceName=${this.referenceName}
+              .presetTemp=${this.presetTemp}
               .readOnly=${this.readOnly}
               ?selected=${this._selected === row.key}
               ?highlight=${this._flash === row.key}

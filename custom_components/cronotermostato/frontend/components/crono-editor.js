@@ -2,6 +2,7 @@
 // selected program and the layout; the pieces come in later steps.
 // Used by the sidebar panel today and by the Lovelace card later: it only needs `hass`.
 
+import { presetTemperature } from "../lib/preset-temps.js";
 import { LitElement, html, css, nothing } from "../lit.js";
 import { tokens, base, fields } from "../styles.js";
 import { syncTheme, watchTheme } from "../lib/theme.js";
@@ -713,6 +714,7 @@ export class CronoEditor extends LitElement {
           .step=${temperatureStep(referenced)}
           .presets=${presets}
           .hasRooms=${referenced.length > 0}
+          .presetTemp=${(preset) => presetTemperature(preset, referenced, this._state.rooms)}
           .referenceName=${reference === ALL || referenced.length !== 1 ? "" : referenced[0].name}
           .readOnly=${readOnly}
           .canAdd=${!full}

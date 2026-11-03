@@ -25,7 +25,8 @@ export class CronoBandRow extends LitElement {
     step: { type: Number },
     presets: { attribute: false }, // string[]: presets of the reference room (or the union of the assigned rooms)
     hasRooms: { type: Boolean }, // there is a reference room (a preset can be checked)
-    referenceName: { type: String }, // name of the single reference room; empty for "all assigned rooms"
+    referenceName: { type: String },
+    presetTemp: { attribute: false }, // (preset) => null | {kind: "value", value} | {kind: "unset"} | {kind: "varies"}: the table of the reference rooms // name of the single reference room; empty for "all assigned rooms"
     _otherOpen: { state: true }, // "Other…" chosen: the free text field is shown
     readOnly: { type: Boolean },
     selected: { type: Boolean, reflect: true },
@@ -211,9 +212,14 @@ export class CronoBandRow extends LitElement {
         place-items: center;
         cursor: pointer;
       }
-      .stepper button:disabled {
+      .stepper button:disabled,
+      .stepper button[aria-disabled="true"] {
         opacity: 0.55;
         cursor: not-allowed;
+      }
+      .stepper input[readonly] {
+        background: var(--crono-surface2);
+        color: var(--crono-muted);
       }
       .hint {
         font-size: 12.5px;
@@ -297,6 +303,7 @@ export class CronoBandRow extends LitElement {
     this.presets = [];
     this.hasRooms = false;
     this.referenceName = "";
+    this.presetTemp = null;
     this._otherOpen = false;
     this._nav = null; // how the focus is leaving a field: {delta}
     this.readOnly = false;
@@ -348,9 +355,21 @@ export class CronoBandRow extends LitElement {
 
   _onTemperature = (event) => this._emit({ temperature: event.target.value }, event.target);
 
+  // What the temperature field of the band follows: the table of the reference rooms, for a preset they have.
+  _tableInfo(preset) {
+    if (typeof preset !== "string" || preset.trim() === "" || typeof this.presetTemp !== "function") return null;
+    return this.presetTemp(preset) ?? null;
+  }
+
+  // A preset known to the table takes the band's own temperature away (the band keeps `temperature` empty,
+  // as before; the table value is only shown). Choosing "no preset" leaves the temperature empty: the user types one.
+  _presetPatch(preset) {
+    return this._tableInfo(preset) ? { preset, temperature: null } : { preset };
+  }
+
   _onPreset = (event) => {
     const value = event.target.value;
-    this._emit({ preset: value.trim() === "" ? null : value }, event.target);
+    this._emit(this._presetPatch(value.trim() === "" ? null : value), event.target);
   };
 
   // The preset select: "" none, "@other" the free text field, "p:<name>" a preset (prefixed, so no
@@ -363,11 +382,20 @@ export class CronoBandRow extends LitElement {
       return;
     }
     this._otherOpen = false;
-    this._emit({ preset: value.startsWith("p:") ? value.slice(2) : null }, event.target);
+    this._emit(this._presetPatch(value.startsWith("p:") ? value.slice(2) : null), event.target);
   };
 
   _bump(direction, event) {
+    if (this._tableInfo(this.band.preset) && this._locked()) return;
     this._emit({ temperature: stepTemperature(this.band.temperature, this.step, direction) }, event?.currentTarget);
+  }
+
+  // The temperature is read only while a preset known to the table is chosen and the band has no
+  // temperature of its own (a band saved earlier with both keeps its own value, editable).
+  _locked() {
+    const band = this.band;
+    const own = band.temperature !== null && band.temperature !== undefined && String(band.temperature).trim() !== "";
+    return band.mode !== "off" && !own && this._tableInfo(band.preset) !== null;
   }
 
   /** Focus the field `field` (its id after the row id) moved by `delta` among the fields of the row. */
@@ -430,6 +458,9 @@ export class CronoBandRow extends LitElement {
         : t("band.preset_unavailable_all", { preset: choices.current })
       : choices.current;
     const rowLabel = t("band.row", { start: String(band.start), end: String(band.end) });
+    const info = this._locked() ? this._tableInfo(band.preset) : null;
+    const tempNoteKey = info === null ? null : info.kind === "value" ? "band.temp_from_preset" : info.kind === "varies" ? "band.temp_preset_varies" : "band.temp_preset_unset";
+    const tempNoteId = `${id}-tempnote`;
     const tempValue = band.temperature === null || band.temperature === undefined ? "" : String(band.temperature);
     const header = html`
           <div class="head">
@@ -470,10 +501,11 @@ export class CronoBandRow extends LitElement {
             <div class="cell span2">
               <label for=${`${id}-temp`}>${t("band.temperature")} (°C)</label>
               <div class="stepper">
-                <button type="button" id=${`${id}-down`} ?disabled=${off} aria-label=${t("band.temp_down")} title=${t("band.temp_down")} @click=${(e) => this._bump(-1, e)}>${iconMinus()}</button>
-                <input class="num" id=${`${id}-temp`} type="number" inputmode="decimal" step=${this.step} .value=${off ? "" : tempValue} placeholder=${off ? "—" : ""} ?disabled=${off} aria-invalid=${has("temperature") ? "true" : "false"} aria-describedby=${describedby("temperature") ?? nothing} @change=${this._onTemperature} />
-                <button type="button" id=${`${id}-up`} ?disabled=${off} aria-label=${t("band.temp_up")} title=${t("band.temp_up")} @click=${(e) => this._bump(1, e)}>${iconPlus()}</button>
+                <button type="button" id=${`${id}-down`} ?disabled=${off} aria-disabled=${info ? "true" : nothing} aria-describedby=${info ? tempNoteId : nothing} aria-label=${t("band.temp_down")} title=${t("band.temp_down")} @click=${(e) => this._bump(-1, e)}>${iconMinus()}</button>
+                <input class="num" id=${`${id}-temp`} type="number" inputmode="decimal" step=${this.step} .value=${off ? "" : info ? (info.kind === "value" ? String(info.value) : "") : tempValue} placeholder=${off || info ? "—" : ""} ?disabled=${off} ?readonly=${info !== null} aria-disabled=${info ? "true" : nothing} aria-invalid=${has("temperature") ? "true" : "false"} aria-describedby=${describedby("temperature", ...(info ? [tempNoteId] : [])) ?? nothing} @change=${this._onTemperature} />
+                <button type="button" id=${`${id}-up`} ?disabled=${off} aria-disabled=${info ? "true" : nothing} aria-describedby=${info ? tempNoteId : nothing} aria-label=${t("band.temp_up")} title=${t("band.temp_up")} @click=${(e) => this._bump(1, e)}>${iconPlus()}</button>
               </div>
+              ${tempNoteKey ? html`<span class="hint" id=${tempNoteId}>${t(tempNoteKey)}</span>` : nothing}
               ${this._errorLines(t, id, "temperature")}
             </div>
             <div class="cell span2">
@@ -508,7 +540,8 @@ export class CronoBandRow extends LitElement {
    */
   _renderReadOnly(t, { band, off, modeClass, rowLabel, header, tempValue }) {
     const errors = this.errors ?? [];
-    const temperature = off || tempValue === "" ? null : `${formatNumber(this.hass, band.temperature, { maximumFractionDigits: 2 })} °C`;
+    const info = this._locked() ? this._tableInfo(band.preset) : null;
+    const temperature = off ? null : info ? (info.kind === "value" ? `${formatNumber(this.hass, info.value, { maximumFractionDigits: 2 })} °C` : null) : tempValue === "" ? null : `${formatNumber(this.hass, band.temperature, { maximumFractionDigits: 2 })} °C`;
     const preset = off || !band.preset ? null : String(band.preset);
     return html`
       <div class="row ro ${modeClass} ${band.auto ? "is-auto" : ""} ${errors.length ? "has-err" : ""}" role="group" aria-label=${rowLabel} tabindex="-1">
