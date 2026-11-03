@@ -1,3 +1,5 @@
 .superpowers/
 .venv/
 __pycache__/
+CLAUDE.md
+docs/superpowers/
