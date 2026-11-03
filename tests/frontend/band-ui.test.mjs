@@ -127,6 +127,27 @@ test("bar segments are not tab stops, keep their label, and a touch selects the 
   assert.deepEqual(calls, [["b", undefined]], "the row is chosen, not the keyboard opened (no `added`)");
 });
 
+test("bar segments: tint class, 2px gap, value label without temperature, edge times", async () => {
+  const { CronoDay } = await import(`${FE}/components/crono-day.js`);
+  const day = new CronoDay();
+  day.hass = { language: "it" };
+  day._barPx = 800;
+  day.rows = [
+    bandOf({ key: "a", start: "00:00", end: "15:00", temperature: null, preset: "away" }),
+    bandOf({ key: "b", start: "15:00", end: "22:30", temperature: null, preset: "home" }),
+    bandOf({ key: "c", start: "22:30", end: "24:00", temperature: null, preset: "away" }),
+  ];
+  const flat = flatten(day.render());
+  const all = flat.strings.join("") + JSON.stringify(flat.values);
+  assert.ok(flat.values.some((v) => typeof v === "string" && /b-heat v1 seg/.test(v)), "second band has tint 1");
+  assert.ok(flat.values.some((v) => typeof v === "string" && /^b-heat seg$/.test(v)), "first band has the plain colour");
+  assert.equal(flat.values.filter((v) => typeof v === "string" && /^b-heat v1 seg$/.test(v)).length, 1, "the third band repeats tint 0 of 'away'");
+  assert.match(all, /calc\(15% \+ 1px\)|calc\(62\.5% \+ 1px\)/, "a gap on each side");
+  for (const preset of ["away", "home"]) assert.ok(all.includes(preset), `${preset} is written on the bar`);
+  for (const time of ["00:00", "15:00", "22:30", "24:00"]) assert.ok(all.includes(time), `${time} under the bar`);
+  assert.ok(flat.values.some((v) => typeof v === "string" && v.startsWith("00:00–15:00, Riscaldamento, away")), "full label");
+});
+
 // ---- 7. language of HA for numbers ---------------------------------------------------------------
 
 test("numbers follow the language of HA, not the browser", () => {

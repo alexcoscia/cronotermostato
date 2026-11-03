@@ -222,8 +222,34 @@ test("the tints of the modes are redundant with icon and text (documented, not a
   assert.match(row, /iconMode\(band\.mode\)/); // icon of the mode in the row
   assert.match(row, /t\(`mode\.\$\{band\.mode\}`\)/); // and its name
   assert.match(day, /iconMode\(row\.mode\)/); // icon in the segment
-  assert.match(day, /aria-label=\$\{this\._segmentLabel/); // and the full text for assistive technology
+  assert.match(day, /aria-label=\$\{label\}/); // and the full text for assistive technology
 });
+
+// Tints of the bar: bands of the same mode with another value get the background of the mode mixed with
+// the text colour of the mode (color-mix in srgb, shares read from crono-day.js). The text must stay readable.
+const DAY_SRC = readFileSync(new URL("../../custom_components/cronotermostato/frontend/components/crono-day.js", import.meta.url), "utf8");
+const TINT_SHARES = [0, ...[...DAY_SRC.matchAll(/\.seg\.v\d \{\s*--tint: (\d+)%/g)].map((m) => Number(m[1]))];
+
+test("crono-day defines one tint per variant", async () => {
+  const { TINT_COUNT } = await import("../../custom_components/cronotermostato/frontend/lib/day-editing.js");
+  assert.equal(TINT_SHARES.length, TINT_COUNT);
+});
+
+for (const name of SITUATIONS) {
+  test(`text on every tint of every mode reaches 4.5:1 and the tints differ from each other (${name})`, () => {
+    const p = palette(name);
+    for (const m of MODES) {
+      const mixed = TINT_SHARES.map((share) => [0, 1, 2].map((i) => p[`${m}-bg`][i] * (1 - share / 100) + p[m][i] * (share / 100)).concat(1));
+      mixed.forEach((bg, i) => assert.ok(contrast(p[m], bg) >= 4.5, `${name}: ${m} tint ${i} is ${contrast(p[m], bg).toFixed(2)}`));
+      // neighbours are told apart by the eye at least a little (luminance ratio) ...
+      for (let i = 1; i < mixed.length; i++) {
+        const a = luminance(mixed[i - 1]);
+        const b = luminance(mixed[i]);
+        assert.ok((Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05) >= 1.08, `${name}: ${m} tints ${i - 1}/${i} too close`);
+      }
+    }
+  });
+}
 
 // Primary button: white text on the accent of the theme darkened with color-mix (and, without
 // color-mix, on a fixed dark teal). Both are read from styles.js and checked against the accents

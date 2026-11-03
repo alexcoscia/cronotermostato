@@ -241,13 +241,86 @@ export function stripSegments(bands) {
   return segments;
 }
 
-/** What a segment of the big bar can show for a width in pixels. */
+/**
+ * What a segment of the big bar can show for a width in pixels. `none` below 12 px (the tooltip and the
+ * aria-label still say everything); `short`: only a sigla (two letters of the preset, or the rounded
+ * temperature, or just the icon); `value`: icon plus the one value that tells the band apart (the
+ * temperature, or the preset when there is no temperature), cut with an ellipsis if it does not fit;
+ * `both`: temperature and preset; `full`: also the "calculated" mark.
+ */
+export const DETAIL_LEVELS = ["none", "short", "value", "both", "full"];
 export function segmentDetail(widthPx) {
-  if (!(widthPx >= 22)) return "none";
-  if (widthPx < 54) return "icon";
-  if (widthPx < 80) return "temperature";
-  if (widthPx < 130) return "preset";
+  if (!(widthPx >= 12)) return "none";
+  if (widthPx < 34) return "short";
+  if (widthPx < 80) return "value";
+  if (widthPx < 130) return "both";
   return "full";
+}
+
+/** Two-letter sigla of a preset ("away" -> "AW"), "" when there is nothing to take. */
+export function presetSigla(preset) {
+  const letters = [...String(preset ?? "").trim()].filter((c) => /\p{L}|\p{N}/u.test(c));
+  return letters.slice(0, 2).join("").toUpperCase();
+}
+
+/** How many tints of the same mode exist (0 = the plain colour of the mode). */
+export const TINT_COUNT = 4;
+
+/**
+ * Tint (0..TINT_COUNT-1) of each band, to tell apart bands of the same mode that differ in value:
+ * the value is the temperature, or the preset when there is no temperature. In a day, the same
+ * mode and value always get the same tint; the first value met of a mode is tint 0, the next ones
+ * 1, 2, 3 (then it starts again: the label says the rest). Bands without a value are tint 0.
+ */
+export function bandTints(bands) {
+  const seen = new Map(); // mode -> [value keys in order of appearance]
+  return bands.map((band) => {
+    const temperature = band.temperature;
+    const hasTemp = temperature !== null && temperature !== undefined && temperature !== "" && Number.isFinite(Number(temperature));
+    const preset = band.preset === null || band.preset === undefined ? "" : String(band.preset).trim();
+    const value = hasTemp ? `t${Number(temperature)}` : preset ? `p${preset}` : "";
+    if (value === "") return 0;
+    const list = seen.get(band.mode) ?? [];
+    seen.set(band.mode, list);
+    let at = list.indexOf(value);
+    if (at < 0) at = list.push(value) - 1;
+    return at % TINT_COUNT;
+  });
+}
+
+const EDGE_LABEL_PX = 38; // room taken by an "HH:MM" label under the bar
+
+/**
+ * Times to write under the bar, at the edges of the segments: [{minute, left (%), align, important}]
+ * left to right, never overlapping for a bar `barPx` wide. 00:00 and 24:00 come first, then the
+ * edges of the longest segments; a label that would overlap one already placed is dropped, so
+ * the dropped ones are the less important. `align`: "start" at the left edge, "end" at the right
+ * edge, "center" otherwise (so no label leaves the bar).
+ */
+export function edgeLabels(segments, barPx, labelPx = EDGE_LABEL_PX) {
+  const weight = new Map(); // minute -> weight
+  const add = (minute, w) => weight.set(minute, Math.max(weight.get(minute) ?? 0, w));
+  for (const seg of segments) {
+    const span = seg.endMin - seg.startMin;
+    add(seg.startMin, span);
+    add(seg.endMin, span);
+  }
+  add(0, Infinity);
+  add(MINUTES_PER_DAY, Infinity);
+  const span = (minute) => {
+    const align = minute === 0 ? "start" : minute === MINUTES_PER_DAY ? "end" : "center";
+    const x = (minute / MINUTES_PER_DAY) * barPx;
+    const from = align === "start" ? x : align === "end" ? x - labelPx : x - labelPx / 2;
+    return [from, from + labelPx, align];
+  };
+  const chosen = [];
+  for (const [minute] of [...weight.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0])) {
+    const [from, to, align] = span(minute);
+    if (chosen.every((c) => to <= c.from || from >= c.to)) chosen.push({ minute, from, to, align });
+  }
+  return chosen
+    .sort((a, b) => a.minute - b.minute)
+    .map(({ minute, align }) => ({ minute, left: (minute / MINUTES_PER_DAY) * 100, align, text: minute === MINUTES_PER_DAY ? "24:00" : formatTime(minute) }));
 }
 
 /**

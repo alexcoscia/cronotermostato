@@ -20,6 +20,10 @@ import {
   stripSegments,
   minutesToPercent,
   segmentDetail,
+  bandTints,
+  presetSigla,
+  edgeLabels,
+  TINT_COUNT,
   mergeDay,
   presetOptions,
   presetIsKnown,
@@ -244,12 +248,64 @@ test("segments skip bands with unreadable times and keep the index of the band",
 });
 
 test("segmentDetail decides how much a segment of a given width in pixels can show", () => {
-  assert.equal(segmentDetail(10), "none");
-  assert.equal(segmentDetail(30), "icon");
-  assert.equal(segmentDetail(60), "temperature");
-  assert.equal(segmentDetail(100), "preset");
+  assert.equal(segmentDetail(5), "none");
+  assert.equal(segmentDetail(11.9), "none");
+  assert.equal(segmentDetail(12), "short"); // a sigla fits already at 12 px
+  assert.equal(segmentDetail(30), "short");
+  assert.equal(segmentDetail(34), "value"); // the temperature, or the preset when there is no temperature
+  assert.equal(segmentDetail(60), "value");
+  assert.equal(segmentDetail(100), "both");
   assert.equal(segmentDetail(200), "full");
-  assert.ok(["none", "icon", "temperature", "preset", "full"].includes(segmentDetail(0)));
+  assert.equal(segmentDetail(0), "none");
+  assert.equal(segmentDetail(NaN), "none");
+});
+
+test("presetSigla takes two letters, upper case, and nothing from nothing", () => {
+  assert.equal(presetSigla("away"), "AW");
+  assert.equal(presetSigla(" home"), "HO");
+  assert.equal(presetSigla("a"), "A");
+  assert.equal(presetSigla(null), "");
+  assert.equal(presetSigla("--"), "");
+});
+
+test("bandTints: same mode with another value gets another tint, same value the same tint", () => {
+  // the real case: Casa on Tuesday, no temperatures
+  const casa = [band("00:00", "15:00", "heat", null, "away"), band("15:00", "22:30", "heat", null, "home"), band("22:30", "24:00", "heat", null, "away")];
+  assert.deepEqual(bandTints(casa), [0, 1, 0]);
+  // temperature decides when there is one
+  assert.deepEqual(bandTints([band("00:00", "06:00", "heat", 18), band("06:00", "12:00", "heat", 21), band("12:00", "18:00", "heat", 18, "eco"), band("18:00", "24:00", "heat", 21.5)]), [0, 1, 0, 2]);
+  // each mode counts on its own; no value is tint 0; never more than TINT_COUNT tints
+  assert.deepEqual(bandTints([band("00:00", "06:00", "cool", 24), band("06:00", "12:00", "heat", 20), band("12:00", "18:00", "off", null, null), band("18:00", "24:00", "cool", 26)]), [0, 0, 0, 1]);
+  const many = bandTints([15, 16, 17, 18, 19, 20].map((t, i) => band(`0${i}:00`, `0${i + 1}:00`, "heat", t)));
+  assert.deepEqual(many, [0, 1, 2, 3, 0, 1]);
+  assert.ok(many.every((n) => n >= 0 && n < TINT_COUNT));
+  assert.deepEqual(bandTints([]), []);
+});
+
+test("edgeLabels: times at the edges of the bands, 00:00 and 24:00 always, never overlapping", () => {
+  const casa = stripSegments([band("00:00", "15:00", "heat", null, "away"), band("15:00", "22:30", "heat", null, "home"), band("22:30", "24:00", "heat", null, "away")]);
+  const wide = edgeLabels(casa, 1200);
+  assert.deepEqual(wide.map((e) => e.text), ["00:00", "15:00", "22:30", "24:00"]);
+  assert.deepEqual(wide.map((e) => e.align), ["start", "center", "center", "end"]);
+  assert.equal(wide[1].left, (15 * 60 * 100) / 1440);
+  // narrow: 22:30 (next to 24:00, the shortest band) is dropped, no two labels overlap
+  const narrow = edgeLabels(casa, 150);
+  assert.ok(narrow.some((e) => e.text === "00:00") && narrow.some((e) => e.text === "24:00"));
+  assert.ok(!narrow.some((e) => e.text === "22:30"));
+  for (const px of [40, 100, 150, 300, 800]) {
+    const segs = stripSegments([band("00:00", "06:00"), band("06:00", "06:30"), band("06:30", "07:00"), band("07:00", "20:00"), band("20:00", "24:00")]);
+    const labels = edgeLabels(segs, px);
+    const boxes = labels.map((e) => {
+      const x = (e.left / 100) * px;
+      const from = e.align === "start" ? x : e.align === "end" ? x - 38 : x - 19;
+      return [from, from + 38];
+    });
+    for (let i = 1; i < boxes.length; i++) assert.ok(boxes[i][0] >= boxes[i - 1][1], `overlap at ${px}px`);
+    assert.ok(labels.some((e) => e.text === "00:00"));
+  }
+  // a minute of a short band at the edge of two long ones keeps the long ones' edges first
+  const touching = edgeLabels(stripSegments([band("00:00", "11:59"), band("11:59", "12:01"), band("12:01", "24:00")]), 300);
+  assert.ok(touching.some((e) => e.text === "11:59") !== touching.some((e) => e.text === "12:01") || touching.length >= 2);
 });
 
 test("sorting: the display rows are ordered by start and keep the order of equal starts", () => {

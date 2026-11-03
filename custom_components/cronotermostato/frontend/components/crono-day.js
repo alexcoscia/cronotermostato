@@ -9,7 +9,7 @@ import { LitElement, html, css, nothing, repeat, styleMap } from "../lit.js";
 import { base, modeColors } from "../styles.js";
 import { iconPlus, iconCopy, iconAuto, iconMode, iconWarn } from "../icons.js";
 import { createT, formatNumber } from "../lib/i18n.js";
-import { stripSegments, segmentDetail } from "../lib/day-editing.js";
+import { stripSegments, segmentDetail, bandTints, presetSigla, edgeLabels, DETAIL_LEVELS } from "../lib/day-editing.js";
 import "./crono-band-row.js";
 
 const MODES = ["heat", "cool", "off"];
@@ -94,6 +94,66 @@ export class CronoDay extends LitElement {
         background: var(--crono-surface2);
         border: 1px solid var(--crono-line);
       }
+      /* Same mode, different value (temperature or preset): the plain colour of the mode is mixed with
+         its text colour by a growing share (contrast.test.mjs checks text on every tint). The label of
+         the band says the value in words, so the tint is never the only cue. */
+      .b-heat {
+        --m-bg: var(--crono-heat-bg);
+        --m-fg: var(--crono-heat);
+      }
+      .b-cool {
+        --m-bg: var(--crono-cool-bg);
+        --m-fg: var(--crono-cool);
+      }
+      .b-off {
+        --m-bg: var(--crono-off-bg);
+        --m-fg: var(--crono-off);
+      }
+      .seg.v1,
+      .seg.v2,
+      .seg.v3 {
+        background-color: color-mix(in srgb, var(--m-bg) calc(100% - var(--tint)), var(--m-fg) var(--tint));
+      }
+      .seg.v1 {
+        --tint: 8%;
+      }
+      .seg.v2 {
+        --tint: 15%;
+      }
+      .seg.v3 {
+        --tint: 22%;
+      }
+      .edges {
+        position: relative;
+        height: 28px;
+      }
+      .edges .e {
+        position: absolute;
+        top: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        font-size: 11.5px;
+        font-weight: 600;
+        color: var(--crono-text);
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+        transform: translateX(-50%);
+      }
+      .edges .e::before {
+        content: "";
+        width: 2px;
+        height: 6px;
+        background: var(--crono-text);
+      }
+      .edges .e.start {
+        transform: none;
+        align-items: flex-start;
+      }
+      .edges .e.end {
+        transform: translateX(-100%);
+        align-items: flex-end;
+      }
       .tick {
         position: absolute;
         top: 0;
@@ -107,6 +167,7 @@ export class CronoDay extends LitElement {
         top: 2px;
         bottom: 2px;
         min-width: 6px;
+        box-sizing: border-box;
         padding: 0 2px;
         margin: 0;
         border: 1.5px solid;
@@ -145,6 +206,10 @@ export class CronoDay extends LitElement {
       }
       .seg .t {
         font-variant-numeric: tabular-nums;
+      }
+      .seg .sigla {
+        font-size: 11.5px;
+        letter-spacing: -0.02em;
       }
       .seg .p {
         font-weight: 500;
@@ -272,26 +337,33 @@ export class CronoDay extends LitElement {
     return [`${row.start}–${row.end}`, mode, temp ? `${temp}C` : "", row.preset ? String(row.preset) : "", row.auto ? t("band.calculated") : ""].filter(Boolean).join(", ");
   }
 
-  _segment(t, row, seg, errored) {
+  _segment(t, row, seg, errored, tint) {
     const px = (seg.width / 100) * this._barPx;
     const detail = segmentDetail(px);
     const selected = this._selected === row.key;
-    const cls = [`b-${MODES.includes(row.mode) ? row.mode : "off"}`, row.auto ? "is-auto" : "", errored ? "err" : "", "seg"].filter(Boolean).join(" ");
+    const cls = [`b-${MODES.includes(row.mode) ? row.mode : "off"}`, tint > 0 ? `v${tint}` : "", row.auto ? "is-auto" : "", errored ? "err" : "", "seg"].filter(Boolean).join(" ");
     const temperature = fmtTemp(this.hass, row.temperature);
-    const level = ["none", "icon", "temperature", "preset", "full"].indexOf(detail);
+    const preset = row.preset ? String(row.preset) : "";
+    const level = DETAIL_LEVELS.indexOf(detail);
+    // temperature first; a band without one shows its preset right away
+    const value = temperature || preset;
+    const sigla = temperature ? temperature.replace("°", "") : presetSigla(preset);
+    const label = this._segmentLabel(t, row);
+    // a 2px gap on each side of every edge: where one band ends and the next begins is always visible
     return html`<button
       type="button"
       tabindex="-1"
       class=${cls}
-      style=${styleMap({ left: `${seg.left}%`, width: `${seg.width}%` })}
+      style=${styleMap({ left: `calc(${seg.left}% + 1px)`, width: `calc(${seg.width}% - 2px)` })}
       aria-current=${selected ? "true" : "false"}
-      aria-label=${this._segmentLabel(t, row)}
-      title=${this._segmentLabel(t, row)}
+      aria-label=${label}
+      title=${label}
       @click=${() => this._pick(row)}
     >
-      ${level >= 1 ? iconMode(row.mode) : nothing}
-      ${level >= 2 && temperature ? html`<span class="t">${temperature}</span>` : nothing}
-      ${level >= 3 && row.preset ? html`<span class="p">${String(row.preset)}</span>` : nothing}
+      ${level === 1 ? (sigla ? html`<span class="sigla">${sigla}</span>` : iconMode(row.mode)) : nothing}
+      ${level >= 2 ? iconMode(row.mode) : nothing}
+      ${level >= 2 && value ? html`<span class=${temperature ? "t" : "p"}>${value}</span>` : nothing}
+      ${level >= 3 && temperature && preset ? html`<span class="p">${preset}</span>` : nothing}
       ${level >= 4 && row.auto ? html`<span class="calc">${iconAuto()}${t("band.calculated")}</span>` : nothing}
     </button>`;
   }
@@ -305,6 +377,8 @@ export class CronoDay extends LitElement {
     const t = createT(this.hass);
     const rows = this.rows ?? [];
     const segments = stripSegments(rows);
+    const tints = bandTints(rows);
+    const edges = edgeLabels(segments, this._barPx);
     const hasUser = rows.some((r) => !r.auto);
     return html`
       <div class="head">
@@ -320,8 +394,9 @@ export class CronoDay extends LitElement {
         <div class="axis" aria-hidden="true">${HOURS.map((h) => html`<span class=${h % 6 === 0 ? "" : "minor"} style=${styleMap({ left: `${(h / 24) * 100}%` })}>${String(h).padStart(2, "0")}</span>`)}</div>
         <div class="bar">
           ${HOURS.slice(1, -1).map((h) => html`<i class="tick" style=${styleMap({ left: `${(h / 24) * 100}%` })}></i>`)}
-          ${segments.map((seg) => this._segment(t, rows[seg.index], seg, (this.errors?.get(rows[seg.index].key) ?? []).length > 0))}
+          ${segments.map((seg) => this._segment(t, rows[seg.index], seg, (this.errors?.get(rows[seg.index].key) ?? []).length > 0, tints[seg.index]))}
         </div>
+        <div class="edges" aria-hidden="true">${edges.map((e) => html`<span class="e ${e.align === "center" ? "" : e.align}" style=${styleMap({ left: `${e.left}%` })}>${e.text}</span>`)}</div>
       </div>
       <span class="sr" role="status" aria-live="polite">${this._notice}</span>
       ${!hasUser ? html`<p class="info">${this.holiday ? t("day.empty_holiday") : t("day.empty")}</p>` : nothing}
