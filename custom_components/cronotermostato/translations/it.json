@@ -129,7 +129,7 @@
         },
         "week": {
           "name": "Settimana",
-          "description": "Sette liste (da lunedì) di fasce {start, end, mode, temperature, preset}, orari HH:MM. In ogni fascia temperatura e preset sono facoltativi, ma per heat e cool ne serve almeno uno; off non ha né l'una né l'altro."
+          "description": "Sette liste (da lunedì) di fasce (start, end, mode, temperature, preset), orari HH:MM. In ogni fascia temperatura e preset sono facoltativi, ma per heat e cool ne serve almeno uno; off non ha né l'una né l'altro."
         },
         "holiday": {
           "name": "Festivi",

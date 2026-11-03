@@ -129,7 +129,7 @@
         },
         "week": {
           "name": "Week",
-          "description": "Seven lists (Monday first) of bands {start, end, mode, temperature, preset}, times as HH:MM. In each band temperature and preset are optional, but heat and cool need at least one of them; off takes neither."
+          "description": "Seven lists (Monday first) of bands (start, end, mode, temperature, preset), times as HH:MM. In each band temperature and preset are optional, but heat and cool need at least one of them; off takes neither."
         },
         "holiday": {
           "name": "Holiday",
