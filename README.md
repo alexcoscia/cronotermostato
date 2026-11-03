@@ -4,17 +4,14 @@ Home Assistant custom integration (HACS): reusable weekly thermostat programs
 (time slots with mode and temperature, plus a holiday day chosen by country),
 assigned to any number of `climate` entities ("rooms"), with a manual override.
 
-Status: version 0.4.0, **not yet tested on a live Home Assistant** (neither the integration nor
-the editor). Parts 1 and 2 of 3 (the integration and its editor) are in this repository; the Tessera
-tile is a separate project.
+Status: version 0.4.0, in use on the author's own Home Assistant. Parts 1 and 2 of 3 (the
+integration and its editor) are in this repository; the Tessera tile is a separate project
+(`tessera-cronotermostato`).
 
 Requires Home Assistant 2026.10.0 or newer. The `holidays` Python library is
 installed automatically.
 
 ## Installation (HACS, custom repository)
-
-> The repository URL below is provisional: it is the one written in
-> `manifest.json`, and the repository may not be published yet.
 
 1. HACS -> three-dot menu -> **Custom repositories**.
 2. Repository: `https://github.com/alexcoscia/cronotermostato`, category **Integration**.
