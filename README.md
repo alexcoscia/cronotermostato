@@ -11,12 +11,15 @@ integration and its editor) are in this repository; the Tessera tile is a separa
 Requires Home Assistant 2026.10.0 or newer. The `holidays` Python library is
 installed automatically.
 
-## Installation (HACS, custom repository)
+## Installation (HACS)
 
-1. HACS -> three-dot menu -> **Custom repositories**.
-2. Repository: `https://github.com/alexcoscia/cronotermostato`, category **Integration**.
-3. Install **Cronotermostato** and restart Home Assistant.
-4. Settings -> Devices & services -> **Add integration** -> *Cronotermostato*.
+1. In HACS, search for **Cronotermostato** and download it.
+2. Restart Home Assistant.
+3. Settings -> Devices & services -> **Add integration** -> *Cronotermostato*.
+
+If it does not show up in the search, add it as a custom repository: HACS -> three-dot menu ->
+**Custom repositories**, repository `https://github.com/alexcoscia/cronotermostato`, category
+**Integration**.
 
 Manual install: copy `custom_components/cronotermostato` into `/config/custom_components/`
 and restart.
@@ -481,11 +484,8 @@ the two will overwrite each other.
 - `cronotermostato/state` is readable by every authenticated user.
 - The `cronotermostato.*` services are open to every authenticated user; `admin_only` does not
   restrict them (see Permissions).
-- The editor has been tested with automated tests only, not yet on a live Home Assistant.
 - Only one configuration entry; one program per room.
-- The icon is in `custom_components/cronotermostato/brand/` (`icon.png`, `icon@2x.png`). Whether it
-  satisfies the `brands` check of HACS has not been verified: that needs the CI (`hacs/action`) to
-  run, and it has not run yet.
+- The icon is in `custom_components/cronotermostato/brand/` (`icon.png`, `icon@2x.png`).
 - The colours of errors, warnings and modes (heat, cool, off) are fixed, to guarantee the contrast
   of the text on them; they do not follow `--error-color` / `--warning-color` of custom themes.
   Text, surfaces, lines and the focus ring follow the theme; the primary button uses the theme's
@@ -511,13 +511,10 @@ repository: the files in `custom_components/cronotermostato/frontend/` are writt
 generated or minified (CI fails if a `*.min.js` or `*.map` file appears there), and the only
 third-party file is `lit.js` (license in `LICENSE-lit.txt`).
 
-A guided manual check on a real Home Assistant is in `docs/PROVA_EDITOR_SU_HA.md` (Italian; the
-integration alone: `docs/PROVA_SU_HA.md`).
-
 The Lovelace card announces `https://github.com/alexcoscia/cronotermostato#readme` as its
-documentation link in the card picker (`documentationURL`). The GitHub repository does not exist
-yet, so that URL is provisional: change it in `frontend/components/crono-card.js` (and in the exact
-URL that `tests/frontend/xss.test.mjs` allows) when the repository is published.
+documentation link in the card picker (`documentationURL`). The URL is set in
+`frontend/components/crono-card.js` (and in the exact URL that `tests/frontend/xss.test.mjs`
+allows).
 
 ## License
 
